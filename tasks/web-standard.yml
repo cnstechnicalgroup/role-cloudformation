@@ -1,0 +1,57 @@
+---
+- name: Launch CloudFormation Stack
+  cloudformation:
+    profile: "{{ aws_profile }}"
+    stack_name: "{{ stack }}-{{ mode }}"
+    state: "present"
+    region: "{{ region }}"
+    disable_rollback: false
+    template_url: "{{ s3_object.url }}"
+    template_parameters:
+      # General
+      Owner: "{{ owner }}"
+      Mode: "{{ mode }}"
+      Stack: "{{ stack }}"
+      Domain: "{{ domain }}"
+      # EC2 Details
+      KeyPair: "{{ key_pair }}"
+      CreateDevInstances: "{{ create_dev_instances }}"
+      CreateRDSInstances: "{{ create_rds_instances }}"
+      CreateASG: "{{ create_asg_resources }}"
+      InstanceType: "{{ instance_type }}"
+      AMIImageID: "{{ ami_image_id }}"
+      # Auto Scaling
+      ASGInstanceType: "{{ asg_instance_type }}"
+      ASGAMIID: "{{ asg_ami_id }}"
+      DesiredCapacity: "{{ desired_capacity }}"
+      MinCapacity: "{{ min_capacity }}"
+      MaxCapacity: "{{ max_capacity }}"
+      # ELB Details
+      SSLCertARN: "{{ ssl_cert_arn }}"
+      # Network Details
+      VPCIDCIDRRange: "{{ vpc_id_cidr_range }}"
+      EC2WebSubnetCIDRRangeA: "{{ ec2_web_subnet_cidr_range_a }}"
+      EC2WebSubnetCIDRRangeB: "{{ ec2_web_subnet_cidr_range_b }}"
+      EC2WebSubnetAZA: "{{ ec2_web_subnet_az_a }}"
+      EC2WebSubnetAZB: "{{ ec2_web_subnet_az_b }}"
+      RDSSubnetCIDRRangeA: "{{ rds_subnet_cidr_range_a }}"
+      RDSSubnetCIDRRangeB: "{{ rds_subnet_cidr_range_b }}"
+      RDSSubnetAZA: "{{ rds_subnet_az_a }}"
+      RDSSubnetAZB: "{{ rds_subnet_az_b }}"
+      SSHMgmtIP: "{{ ssh_mgmt_ip }}"
+      VPCPeeringConnectionID: "{{ vpc_peering_connection_id }}"
+      # RDS / DB Details
+      MultiAZDatabase: "{{ multi_az_database }}"
+      DBName: "{{ db_name }}"
+      DBUser: "{{ db_user }}"
+      DBPassword: "{{ db_password }}"
+      DBInstanceClass: "{{ db_instance_class }}"
+      DBAllocatedStorage: "{{ db_allocated_storage }}"
+      AllowRemote: "{{ db_allow_remote }}"
+      # Application Details
+      GitRepository: "{{ git_repository }}"
+    tags:
+      Stack: "{{ stack }}"
+      Owner: "{{ owner }}"
+      Mode: "{{ mode }}"
+  register: cf
