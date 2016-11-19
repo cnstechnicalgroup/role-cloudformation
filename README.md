@@ -11,12 +11,7 @@ Nothing, it runs out of the box.
 Role Variables
 --------------
 
-In the current version, you can specify the following variables:
-
-| Name               | Default |                                                              |
-|--------------------|---------|--------------------------------------------------------------|
-| admin_users        |   ---   | List containing all usernames to be created on target hosts. |
-
+See task files for variables.
 
 Install
 -------
@@ -24,7 +19,8 @@ Install
 Add the following line to your `requirements.yml`:
 
 ```yml
-
+- src: https://github.com/cnstechnicalgroup/role-cloudformation.git
+  name: cns.cloudformation
 ```
 
 Dependencies

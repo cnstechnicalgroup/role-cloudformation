@@ -1,0 +1,1528 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: "AWS CloudFormation Template: Highly available, scalable web stack with an Amazon RDS database instance for the backend data store, ELB for multi-instance load balancing, S3 for static storage, Code Deploy Application / Deploy Group"
+Parameters: 
+  KeyPair: 
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  Stack: 
+    Default: projectname
+    Description: Stack name
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  Domain: 
+    Default: domainname
+    Description: Domain name
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  Owner: 
+    Default: acme
+    Description: Project owner name
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  Mode: 
+    Default: prod
+    Description: Mode name (dev, stage, test, prod)
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  CreateDevInstances: 
+    Default: false
+    Description: Create EC2 instances for building AMI
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  CreateRDSInstancesStage: 
+    Default: false
+    Description: Create Stage RDS instances?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  CreateRDSInstancesProd:
+    Default: false
+    Description: Create Prod RDS instances?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  CreateASG: 
+    Default: true
+    Description: Create ASG Resources?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  GitRepository: 
+    Default: projectname
+    Description: Stack name
+    Type: String
+    MinLength: 1
+    MaxLength: 128
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  VPCIDCIDRRange: 
+    Description: The IP address range for your new VPC.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.50.0.0/16
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  EC2WebSubnetCIDRRangeA: 
+    Description: The IP address range for Web subnet in AZ A.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.50.2.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  EC2WebSubnetCIDRRangeB: 
+    Description: The IP address range for Web subnet in AZ B.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.50.3.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  EC2WebSubnetAZA: 
+    Default: eu-west-1a
+    Description: EC2 Web Subnet AZ - A
+    Type: String
+    MinLength: 1
+    MaxLength: 10
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  EC2WebSubnetAZB: 
+    Default: eu-west-1b
+    Description: EC2 Web Subnet AZ - B
+    Type: String
+    MinLength: 1
+    MaxLength: 10
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+
+##############
+# RDS Config #
+##############
+
+  RDSSubnetCIDRRangeA: 
+    Description: The IP address range for RDS subnet in AZ A.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.50.4.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  RDSSubnetCIDRRangeB: 
+    Description: The IP address range for RDS subnet in AZ B.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.50.5.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  RDSSubnetAZA: 
+    Default: eu-west-1a
+    Description: RDS Subnet AZ - A
+    Type: String
+    MinLength: 1
+    MaxLength: 10
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  RDSSubnetAZB: 
+    Default: eu-west-1b
+    Description: RDS Subnet AZ - A
+    Type: String
+    MinLength: 1
+    MaxLength: 10
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBName: 
+    Default: myDatabase
+    Description: MySQL database name
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBUser: 
+    NoEcho: true
+    Description: Username for MySQL database access
+    Type: String
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  DBPassword: 
+    NoEcho: true
+    Description: Password for MySQL database access
+    Type: String
+    MinLength: 8
+    MaxLength: 41
+    ConstraintDescription: must contain only alphanumeric characters.
+  DBInstanceClassStage: 
+    Description: The database instance type
+    Type: String
+    Default: db.t2.micro
+    AllowedValues: 
+      - db.t1.micro
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+      - db.m1.xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.m3.medium
+      - db.m3.large
+      - db.m3.xlarge
+      - db.m3.2xlarge
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+      - db.m4.10xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.cr1.8xlarge
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+    ConstraintDescription: must select a valid database instance type.
+  MultiAZDatabaseStage: 
+    Default: true
+    Description: Create a Multi-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+    ConstraintDescription: must be either true or false.
+  DBAllocatedStorageStage:
+    Default: 5
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: 5
+    MaxValue: 1024
+    ConstraintDescription: must be between 5 and 1024Gb.
+  AllowRemoteStage:
+    Default: false
+    Description: Allow accesss from management IP
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  DBInstanceClassProd: 
+    Description: The database instance type
+    Type: String
+    Default: db.t2.micro
+    AllowedValues: 
+      - db.t1.micro
+      - db.m1.small
+      - db.m1.medium
+      - db.m1.large
+      - db.m1.xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.m3.medium
+      - db.m3.large
+      - db.m3.xlarge
+      - db.m3.2xlarge
+      - db.m4.large
+      - db.m4.xlarge
+      - db.m4.2xlarge
+      - db.m4.4xlarge
+      - db.m4.10xlarge
+      - db.r3.large
+      - db.r3.xlarge
+      - db.r3.2xlarge
+      - db.r3.4xlarge
+      - db.r3.8xlarge
+      - db.m2.xlarge
+      - db.m2.2xlarge
+      - db.m2.4xlarge
+      - db.cr1.8xlarge
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+      - db.t2.large
+    ConstraintDescription: must select a valid database instance type.
+  MultiAZDatabaseProd: 
+    Default: true
+    Description: Create a Multi-AZ MySQL Amazon RDS database instance
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+    ConstraintDescription: must be either true or false.
+  DBAllocatedStorageProd:
+    Default: 5
+    Description: The size of the database (Gb)
+    Type: Number
+    MinValue: 5
+    MaxValue: 1024
+    ConstraintDescription: must be between 5 and 1024Gb.
+  AllowRemoteProd:
+    Default: false
+    Description: Allow accesss from management IP
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  DesiredCapacity: 
+    Default: 0
+    Description: The desired of WebServer instances
+    Type: Number
+    MinValue: 0
+    MaxValue: 5
+    ConstraintDescription: must be between 1 and 5 EC2 instances.
+  MinCapacity: 
+    Default: 0
+    Description: The min nuber of WebServer instances
+    Type: Number
+    MinValue: 0
+    MaxValue: 5
+    ConstraintDescription: must be between 1 and 5 EC2 instances.
+  MaxCapacity: 
+    Default: 0
+    Description: The max nuber of WebServer instances
+    Type: Number
+    MinValue: 0
+    MaxValue: 5
+    ConstraintDescription: must be between 1 and 5 EC2 instances.
+  AMIImageID: 
+    Default: ami-e31a6594
+    Description: AMI Image ID
+    Type: String
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+    ConstraintDescription: Valid AMI Image ID
+  ASGAMIID: 
+    Default: ami-e31a6594
+    Description: ASG AMI Image ID
+    Type: String
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9-]*"
+    ConstraintDescription: Valid AMI Image ID
+  InstanceType: 
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues: 
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - hi1.4xlarge
+      - hs1.8xlarge
+      - cr1.8xlarge
+      - cc2.8xlarge
+      - cg1.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  ASGInstanceType: 
+    Description: ASG EC2 instance type for Launch Config
+    Type: String
+    Default: t2.micro
+    AllowedValues: 
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - hi1.4xlarge
+      - hs1.8xlarge
+      - cr1.8xlarge
+      - cc2.8xlarge
+      - cg1.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  SSLCertARN: 
+    Default: "arn::"
+    Description: SSL Cert ARN
+    Type: String
+    ConstraintDescription: "valid AWS SSL certificate arn:: string"
+  SSHMgmtIP: 
+    Description:  The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.0.6.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  VPCPeeringConnectionID: 
+    Description:  The VPC Peering Connection ID if available
+    Type: String
+    MinLength: 0
+    MaxLength: 20
+    Default: ""
+    ConstraintDescription: must be a valid VPC Peering Connection ID (pcx-c0c41da9)
+  MgmtAccountID:
+    Description: Management account ID
+    Type: String
+    MinLength: 0
+    MaxLength: 20
+    Default: ""
+    ConstraintDescription: must be a valid AWS account ID
+Mappings: 
+  AWSInstanceType2Arch: 
+    t1.micro: 
+      Arch: HVM64
+    t2.nano: 
+      Arch: HVM64
+    t2.micro: 
+      Arch: HVM64
+    t2.small: 
+      Arch: HVM64
+    t2.medium: 
+      Arch: HVM64
+    t2.large: 
+      Arch: HVM64
+    m1.small: 
+      Arch: HVM64
+    m1.medium: 
+      Arch: HVM64
+    m1.large: 
+      Arch: HVM64
+    m1.xlarge: 
+      Arch: HVM64
+    m2.xlarge: 
+      Arch: HVM64
+    m2.2xlarge: 
+      Arch: HVM64
+    m2.4xlarge: 
+      Arch: HVM64
+    m3.medium: 
+      Arch: HVM64
+    m3.large: 
+      Arch: HVM64
+    m3.xlarge: 
+      Arch: HVM64
+    m3.2xlarge: 
+      Arch: HVM64
+    m4.large: 
+      Arch: HVM64
+    m4.xlarge: 
+      Arch: HVM64
+    m4.2xlarge: 
+      Arch: HVM64
+    m4.4xlarge: 
+      Arch: HVM64
+    m4.10xlarge: 
+      Arch: HVM64
+    c1.medium: 
+      Arch: HVM64
+    c1.xlarge: 
+      Arch: HVM64
+    c3.large: 
+      Arch: HVM64
+    c3.xlarge: 
+      Arch: HVM64
+    c3.2xlarge: 
+      Arch: HVM64
+    c3.4xlarge: 
+      Arch: HVM64
+    c3.8xlarge: 
+      Arch: HVM64
+    c4.large: 
+      Arch: HVM64
+    c4.xlarge: 
+      Arch: HVM64
+    c4.2xlarge: 
+      Arch: HVM64
+    c4.4xlarge: 
+      Arch: HVM64
+    c4.8xlarge: 
+      Arch: HVM64
+    g2.2xlarge: 
+      Arch: HVMG2
+    g2.8xlarge: 
+      Arch: HVMG2
+    r3.large: 
+      Arch: HVM64
+    r3.xlarge: 
+      Arch: HVM64
+    r3.2xlarge: 
+      Arch: HVM64
+    r3.4xlarge: 
+      Arch: HVM64
+    r3.8xlarge: 
+      Arch: HVM64
+    i2.xlarge: 
+      Arch: HVM64
+    i2.2xlarge: 
+      Arch: HVM64
+    i2.4xlarge: 
+      Arch: HVM64
+    i2.8xlarge: 
+      Arch: HVM64
+    d2.xlarge: 
+      Arch: HVM64
+    d2.2xlarge: 
+      Arch: HVM64
+    d2.4xlarge: 
+      Arch: HVM64
+    d2.8xlarge: 
+      Arch: HVM64
+    hi1.4xlarge: 
+      Arch: HVM64
+    hs1.8xlarge: 
+      Arch: HVM64
+    cr1.8xlarge: 
+      Arch: HVM64
+    cc2.8xlarge: 
+      Arch: HVM64
+  AWSInstanceType2NATArch: 
+    t1.micro: 
+      Arch: NATPV64
+    t2.nano: 
+      Arch: NATHVM64
+    t2.micro: 
+      Arch: NATHVM64
+    t2.small: 
+      Arch: NATHVM64
+    t2.medium: 
+      Arch: NATHVM64
+    t2.large: 
+      Arch: NATHVM64
+    m1.small: 
+      Arch: NATPV64
+    m1.medium: 
+      Arch: NATPV64
+    m1.large: 
+      Arch: NATPV64
+    m1.xlarge: 
+      Arch: NATPV64
+    m2.xlarge: 
+      Arch: NATPV64
+    m2.2xlarge: 
+      Arch: NATPV64
+    m2.4xlarge: 
+      Arch: NATPV64
+    m3.medium: 
+      Arch: NATHVM64
+    m3.large: 
+      Arch: NATHVM64
+    m3.xlarge: 
+      Arch: NATHVM64
+    m3.2xlarge: 
+      Arch: NATHVM64
+    m4.large: 
+      Arch: NATHVM64
+    m4.xlarge: 
+      Arch: NATHVM64
+    m4.2xlarge: 
+      Arch: NATHVM64
+    m4.4xlarge: 
+      Arch: NATHVM64
+    m4.10xlarge: 
+      Arch: NATHVM64
+    c1.medium: 
+      Arch: NATPV64
+    c1.xlarge: 
+      Arch: NATPV64
+    c3.large: 
+      Arch: NATHVM64
+    c3.xlarge: 
+      Arch: NATHVM64
+    c3.2xlarge: 
+      Arch: NATHVM64
+    c3.4xlarge: 
+      Arch: NATHVM64
+    c3.8xlarge: 
+      Arch: NATHVM64
+    c4.large: 
+      Arch: NATHVM64
+    c4.xlarge: 
+      Arch: NATHVM64
+    c4.2xlarge: 
+      Arch: NATHVM64
+    c4.4xlarge: 
+      Arch: NATHVM64
+    c4.8xlarge: 
+      Arch: NATHVM64
+    g2.2xlarge: 
+      Arch: NATHVMG2
+    g2.8xlarge: 
+      Arch: NATHVMG2
+    r3.large: 
+      Arch: NATHVM64
+    r3.xlarge: 
+      Arch: NATHVM64
+    r3.2xlarge: 
+      Arch: NATHVM64
+    r3.4xlarge: 
+      Arch: NATHVM64
+    r3.8xlarge: 
+      Arch: NATHVM64
+    i2.xlarge: 
+      Arch: NATHVM64
+    i2.2xlarge: 
+      Arch: NATHVM64
+    i2.4xlarge: 
+      Arch: NATHVM64
+    i2.8xlarge: 
+      Arch: NATHVM64
+    d2.xlarge: 
+      Arch: NATHVM64
+    d2.2xlarge: 
+      Arch: NATHVM64
+    d2.4xlarge: 
+      Arch: NATHVM64
+    d2.8xlarge: 
+      Arch: NATHVM64
+    hi1.4xlarge: 
+      Arch: NATHVM64
+    hs1.8xlarge: 
+      Arch: NATHVM64
+    cr1.8xlarge: 
+      Arch: NATHVM64
+    cc2.8xlarge: 
+      Arch: NATHVM64
+  AwsRegionToAMI: 
+    us-east-1: 
+      id: ami-35792c5c
+    us-west-2: 
+      id: ami-d03ea1e0
+    us-west-1: 
+      id: ami-687b4f2d
+    eu-west-1: 
+      id: ami-e31a6594
+    ap-southeast-1: 
+      id: ami-14f2b946
+    ap-northeast-1: 
+      id: ami-3561fe34
+    ap-southeast-2: 
+      id: ami-a148d59b
+    sa-east-1: 
+      id: ami-9f6ec982
+  AWSRegionArch2AMI: 
+    us-east-1: 
+      PV64: ami-5fb8c835
+      HVM64: ami-e31a6594
+      HVMG2: ami-e998ea83
+    us-west-2: 
+      PV64: ami-d93622b8
+      HVM64: ami-f0091d91
+      HVMG2: ami-315f4850
+    us-west-1: 
+      PV64: ami-56ea8636
+      HVM64: ami-d5ea86b5
+      HVMG2: ami-943956f4
+    eu-west-1: 
+      PV64: ami-95e33ce6
+      HVM64: ami-e31a6594
+      HVMG2: ami-83fd23f0
+    eu-central-1: 
+      PV64: ami-794a5915
+      HVM64: ami-bc5b48d0
+      HVMG2: ami-ba1a09d6
+    ap-northeast-1: 
+      PV64: ami-393c1957
+      HVM64: ami-383c1956
+      HVMG2: ami-08e5c166
+    ap-northeast-2: 
+      PV64: NOT_SUPPORTED
+      HVM64: ami-249b554a
+      HVMG2: NOT_SUPPORTED
+    ap-southeast-1: 
+      PV64: ami-34bd7a57
+      HVM64: ami-c9b572aa
+      HVMG2: ami-5a15d239
+    ap-southeast-2: 
+      PV64: ami-ced887ad
+      HVM64: ami-48d38c2b
+      HVMG2: ami-0c1a446f
+    sa-east-1: 
+      PV64: ami-7d15ad11
+      HVM64: ami-6817af04
+      HVMG2: NOT_SUPPORTED
+    cn-north-1: 
+      PV64: ami-18ac6575
+      HVM64: ami-43a36a2e
+      HVMG2: NOT_SUPPORTED
+Conditions: 
+  Is-EC2-VPC:
+    !Or [ !Equals [ !Ref "AWS::Region", "eu-central-1" ], !Equals [ !Ref "AWS::Region", "cn-north-1" ], !Equals [ !Ref "AWS::Region", ap-northeast-2 ] ]
+  Is-EC2-Classic:
+    !Not [ Condition: Is-EC2-VPC ]
+  CreateDevInstanceResources:
+    !Equals [ !Ref CreateDevInstances, true ]
+  CreateRDSInstanceResourcesStage:
+    !Equals [ !Ref CreateRDSInstancesStage, true ]
+  CreateRDSInstanceResourcesProd:
+    !Equals [ !Ref CreateRDSInstancesProd, true ]
+  CreateASGResources:
+    !Equals [ !Ref CreateASG, true ]
+  CreateVPCPeeringConnectionRoute: 
+    !Not [ !Equals [ !Ref VPCPeeringConnectionID, "" ] ]
+  UseSSL: 
+    !Not [ !Equals [ !Ref SSLCertARN, "" ] ]
+Resources: 
+  StackVPC: 
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref VPCIDCIDRRange
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, vpc , !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  EC2WebSubnetA: 
+    Type: AWS::EC2::Subnet
+    Properties: 
+      VpcId: !Ref StackVPC
+      AvailabilityZone: !Ref EC2WebSubnetAZA
+      CidrBlock: !Ref EC2WebSubnetCIDRRangeA
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web-a, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  EC2WebSubnetB: 
+    Type: AWS::EC2::Subnet
+    Properties: 
+      VpcId: !Ref StackVPC
+      AvailabilityZone: !Ref EC2WebSubnetAZB
+      CidrBlock: !Ref EC2WebSubnetCIDRRangeB
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web-b, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  RDSSubnetA: 
+    Type: AWS::EC2::Subnet
+    Properties: 
+      VpcId: !Ref StackVPC
+      AvailabilityZone: !Ref RDSSubnetAZA
+      CidrBlock: !Ref RDSSubnetCIDRRangeA
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, db-a, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  RDSSubnetB: 
+    Type: AWS::EC2::Subnet
+    Properties: 
+      VpcId: !Ref StackVPC
+      AvailabilityZone: !Ref RDSSubnetAZB
+      CidrBlock: !Ref RDSSubnetCIDRRangeB
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, db-b, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  RouteTable: 
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref StackVPC
+  SubnetRouteTableAssociationA: 
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      SubnetId: !Ref EC2WebSubnetA
+      RouteTableId: !Ref RouteTable
+  SubnetRouteTableAssociationB: 
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      SubnetId: !Ref EC2WebSubnetB
+      RouteTableId: !Ref RouteTable
+  RDSSubnetRouteTableAssociationA: 
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      SubnetId: !Ref RDSSubnetA
+      RouteTableId: !Ref RouteTable
+  RDSSubnetRouteTableAssociationB: 
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      SubnetId: !Ref RDSSubnetB
+      RouteTableId: !Ref RouteTable
+  InternetGateway: 
+    Type: AWS::EC2::InternetGateway
+  AttachGateway: 
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      VpcId: !Ref StackVPC
+      InternetGatewayId: !Ref InternetGateway
+  PublicRoute: 
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties: 
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  VPCPeeringRoute: 
+    Type: AWS::EC2::Route
+    Condition: CreateVPCPeeringConnectionRoute
+    Properties: 
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: !Ref SSHMgmtIP
+      VpcPeeringConnectionId: !Ref VPCPeeringConnectionID
+  EC2WebSecurityGroup: 
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: EC2 Security Group
+      VpcId: !Ref StackVPC
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web-sg, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  ELBSecurityGroup: 
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: ELB Security Group
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 80
+          ToPort: 80
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: 443
+          ToPort: 443
+      VpcId: !Ref StackVPC
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, elb, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  WebInboundRuleHTTP: 
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId: !GetAtt ELBSecurityGroup.GroupId
+      GroupId: !GetAtt EC2WebSecurityGroup.GroupId
+  WebInboundRuleVPCSSH: 
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: !Ref SSHMgmtIP
+      GroupId: !GetAtt EC2WebSecurityGroup.GroupId
+  WebInboundRuleHTTPS: 
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !GetAtt ELBSecurityGroup.GroupId
+      GroupId: !GetAtt EC2WebSecurityGroup.GroupId
+  ELBOutboundRuleHTTP: 
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      DestinationSecurityGroupId: !GetAtt EC2WebSecurityGroup.GroupId
+      GroupId: !GetAtt ELBSecurityGroup.GroupId
+  ELBOutboundRuleHTTPS: 
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !GetAtt EC2WebSecurityGroup.GroupId
+      GroupId: !GetAtt ELBSecurityGroup.GroupId
+  DBEC2SecurityGroup: 
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      VpcId: !Ref StackVPC
+      GroupDescription: Open database for access
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, db-sg, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  DBInboundRuleMySQL: 
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !GetAtt EC2WebSecurityGroup.GroupId
+      GroupId: !GetAtt DBEC2SecurityGroup.GroupId
+  DBInboundRuleVPCMySQL: 
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: 
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      CidrIp: !Ref SSHMgmtIP
+      GroupId: !GetAtt DBEC2SecurityGroup.GroupId
+  S3BucketDeploy: 
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties: 
+      AccessControl: Private
+      BucketName: !Join [ -, [ !Ref Stack, deploy ] ]
+  S3BucketProduction: 
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: !Join [ -, [ !Ref Stack, !Ref Mode] ]
+      WebsiteConfiguration: 
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      CorsConfiguration: 
+        CorsRules: 
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods: 
+              - GET
+            AllowedOrigins:
+              - "*"
+            Id: CORSRule-Public
+            MaxAge: 3600
+  S3BucketApex: 
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: !Join [ -, [ !Ref Stack, apex] ]
+      WebsiteConfiguration: 
+        IndexDocument: index.html
+        ErrorDocument: error.html
+        RoutingRules: 
+          - RedirectRule: 
+              HostName: !Ref Domain
+  BackupAccessBucketPolicy: 
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref S3BucketProduction
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Sid: List Access
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ "arn:aws:s3:::", !Ref MgmtAccountID, '-', !Ref Mode ] ]
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Stack, '-', !Ref Mode ] ]
+          - Sid: Get Object Read Only
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ "arn:aws:s3:::", !Ref MgmtAccountID, '-', !Ref Mode ] ]
+            Action: 
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Stack, '-', !Ref Mode, "/*" ] ]
+  S3AccessGroup: 
+    Type: AWS::IAM::Group
+    Properties: 
+      Path: /
+  S3AccessUser: 
+    Type: AWS::IAM::User
+    Properties: 
+      Path: /
+  AddS3AccessUserToS3AccessGroup: 
+    Type: AWS::IAM::UserToGroupAddition
+    Properties: 
+      GroupName: !Ref S3AccessGroup
+      Users: 
+        - !Ref S3AccessUser
+  S3UserAccessKey: 
+    Type: AWS::IAM::AccessKey
+    Properties: 
+      UserName: !Ref S3AccessUser
+  WebInstanceRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+          - Sid: ""
+            Effect: Allow
+            Principal: 
+              Service: 
+                - ec2.amazonaws.com
+            Action: sts:AssumeRole
+          - Sid: ""
+            Effect: Allow
+            Principal: 
+              Service: 
+                - codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+  WebInstanceManagedPolicy: 
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      Description: Web Instance Role Policy
+      Path: /
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Action: "*"
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketDeploy, /* ] ]
+          - Effect: Allow
+            Action: "*"
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProduction, /* ] ]
+          - Effect: Allow
+            Action: elasticloadbalancing:DescribeLoadBalancers
+            Resource: "*"
+      Roles: 
+        - !Ref WebInstanceRole
+  S3AccessPolicy: 
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: S3BucketFullAccess
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Action: "*"
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketDeploy, /* ] ]
+          - Effect: Allow
+            Action: "*"
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProduction, /* ] ]
+      Groups: 
+        - !Ref S3AccessGroup
+  WebInstanceProfile: 
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      Path: /
+      Roles: 
+        - !Ref WebInstanceRole
+  CodeDeployPolicy: 
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: CodeDeployPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Resource: 
+              - "*"
+            Action: 
+              - "cloudformation:*"
+              - "codedeploy:*"
+              - "ec2:*"
+              - iam:AddRoleToInstanceProfile
+              - iam:CreateInstanceProfile
+              - iam:CreateRole
+              - iam:DeleteInstanceProfile
+              - iam:DeleteRole
+              - iam:DeleteRolePolicy
+              - iam:GetRole
+              - iam:PassRole
+              - iam:PutRolePolicy
+              - iam:RemoveRoleFromInstanceProfile
+              - autoscaling:CompleteLifecycleAction
+              - autoscaling:DeleteLifecycleHook
+              - autoscaling:DescribeLifecycleHooks
+              - autoscaling:DescribeAutoScalingGroups
+              - autoscaling:PutLifecycleHook
+              - autoscaling:RecordLifecycleActionHeartbeat
+              - Tag:getResources
+              - Tag:getTags
+              - Tag:getTagsForResource
+              - Tag:getTagsForResourceList
+            Effect: Allow
+          - Effect: Allow
+            Action: 
+              - s3:ListBucket
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Sstack, -deploy ] ]
+          - Effect: Allow
+            Action: 
+              - s3:GetObject
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Stack, -deploy/* ] ]
+      Roles: 
+        - !Ref WebInstanceRole
+  CodeDeployInstancePolicy: 
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: CodeDeployPolicy
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Resource: "*"
+            Action: 
+              - autoscaling:Describe*
+              - cloudformation:Describe*
+              - cloudformation:GetTemplate
+              - s3:Get*
+            Effect: Allow
+      Roles: 
+        - !Ref WebInstanceRole
+  EC2WebInstance: 
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Retain
+    Condition: CreateDevInstanceResources
+    Properties: 
+      IamInstanceProfile: !Ref WebInstanceProfile
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet: 
+            - !Ref EC2WebSecurityGroup
+          SubnetId: !Ref EC2WebSubnetA
+      KeyName: !Ref KeyPair
+      ImageId: !Ref AMIImageID
+      InstanceType: !Ref InstanceType
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web-stage ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+        - Key: Role
+          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
+#    ElasticLoadBalancer: 
+#      Type: AWS::ElasticLoadBalancing::LoadBalancer
+#      Properties: 
+#        CrossZone: true
+#        LBCookieStickinessPolicy: 
+#          - PolicyName: CookieBasedPolicy
+#            CookieExpirationPeriod: 30
+#        SecurityGroups: 
+#          - !Ref ELBSecurityGroup
+#        Listeners: 
+#          - LoadBalancerPort: 80
+#            InstancePort: 80
+#            Protocol: HTTP
+#            PolicyNames: 
+#              - CookieBasedPolicy
+#          - LoadBalancerPort: 443
+#            InstancePort: 443
+#            Protocol: !If [ UseSSL, HTTPS, HTTP ]
+#            SSLCertificateId: !Ref SSLCertARN
+#        HealthCheck: 
+#          Target: HTTP:443/ping
+#          HealthyThreshold: 2
+#          UnhealthyThreshold: 5
+#          Interval: 10
+#          Timeout: 5
+#        Subnets: 
+#          - !Ref EC2WebSubnetA
+#          - !Ref EC2WebSubnetB
+#        Tags: 
+#          - Key: Name
+#            Value: !Join [ -, [ !Ref Stack, elb, !Ref Mode ] ]
+#          - Key: Stack
+#            Value: !Ref Stack
+#          - Key: Owner
+#            Value: !Ref Owner
+#          - Key: Mode
+#            Value: !Ref Mode
+  ALBListenerHTTP:
+    Type : AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  ALBListenerHTTPS:
+    Type : AWS::ElasticLoadBalancingV2::Listener
+    Condition: UseSSL
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Certificates:
+      - CertificateArn: !Ref SSLCertARN
+      Port: 443
+      Protocol: HTTPS
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Name: !Join [ -, [ !Ref Stack, albtg, !Ref Mode ] ]
+      Port: 443
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      HealthCheckPath: /ping
+      VpcId: !Ref StackVPC
+      Tags:
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Owner
+        Value: !Ref Owner
+      - Key: Mode
+        Value: !Ref Mode
+  ApplicationLoadBalancer: 
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+      - !Ref EC2WebSubnetA
+      - !Ref EC2WebSubnetB
+      SecurityGroups:
+      - !Ref ELBSecurityGroup
+      Tags:
+      - Key: Name
+        Value: !Join [ -, [ !Ref Stack, alb, !Ref Mode ] ]
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Owner
+        Value: !Ref Owner
+      - Key: Mode
+        Value: !Ref Mode
+#      Properties: 
+#        CrossZone: true
+#        LBCookieStickinessPolicy: 
+#          - PolicyName: CookieBasedPolicy
+#            CookieExpirationPeriod: 30
+#        SecurityGroups: 
+#          - !Ref ELBSecurityGroup
+#        Listeners: 
+#          - LoadBalancerPort: 80
+#            InstancePort: 80
+#            Protocol: HTTP
+#            PolicyNames: 
+#              - CookieBasedPolicy
+#          - LoadBalancerPort: 443
+#            InstancePort: 443
+#            Protocol: !If [ UseSSL, HTTPS, HTTP ]
+#            SSLCertificateId: !Ref SSLCertARN
+#        HealthCheck: 
+#          Target: HTTP:443/ping
+#          HealthyThreshold: 2
+#          UnhealthyThreshold: 5
+#          Interval: 10
+#          Timeout: 5
+#        Subnets: 
+#          - !Ref EC2WebSubnetA
+#          - !Ref EC2WebSubnetB
+#        Tags: 
+#          - Key: Name
+#            Value: !Join [ -, [ !Ref Stack, elb, !Ref Mode ] ]
+#          - Key: Stack
+#            Value: !Ref Stack
+#          - Key: Owner
+#            Value: !Ref Owner
+#          - Key: Mode
+#            Value: !Ref Mode
+  WebServerGroup: 
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: CreateASGResources
+    Properties: 
+      AvailabilityZones: 
+        - !Ref EC2WebSubnetAZA
+      VPCZoneIdentifier: 
+        - !Ref EC2WebSubnetA
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: !Ref MinCapacity
+      MaxSize: !Ref MaxCapacity
+      DesiredCapacity: !Ref DesiredCapacity
+      LoadBalancerNames: 
+        - !Ref ApplicationLoadBalancer
+        #- !Ref ElasticLoadBalancer
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
+          PropagateAtLaunch: true
+        - Key: Stack
+          Value: !Ref Stack
+          PropagateAtLaunch: true
+        - Key: Owner
+          Value: !Ref Owner
+          PropagateAtLaunch: true
+        - Key: Mode
+          Value: !Ref Mode
+          PropagateAtLaunch: true
+        - Key: Role
+          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
+          PropagateAtLaunch: true
+    CreationPolicy: 
+      AutoScalingCreationPolicy: 
+        MinSuccessfulInstancesPercent: 0
+      ResourceSignal: 
+        Timeout: PT10M
+        Count: !Ref DesiredCapacity
+    UpdatePolicy: 
+      AutoScalingRollingUpdate: 
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT10M
+        WaitOnResourceSignals: false
+  LaunchConfig: 
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Condition: CreateASGResources
+    DependsOn: InternetGateway
+    Properties: 
+      AssociatePublicIpAddress: true
+      ImageId: !Ref ASGAMIID
+      IamInstanceProfile: !Ref WebInstanceProfile
+      InstanceType: !Ref ASGInstanceType
+      SecurityGroups: 
+        - !Ref EC2WebSecurityGroup
+      KeyName: !Ref KeyPair
+  DBSubnetGroup: 
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: DB Subnet Group
+      SubnetIds: 
+        - !Ref RDSSubnetA
+        - !Ref RDSSubnetB
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, dbsg, !Ref Mode ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  RDSMySQLInstanceStage: 
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Retain
+    DependsOn: DBEC2SecurityGroup
+    Condition: CreateRDSInstanceResourcesStage
+    Properties: 
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Engine: MySQL
+      DBName: !Ref DBName
+      MultiAZ: !Ref MultiAZDatabaseStage
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBInstanceClassStage
+      AllocatedStorage: !Ref DBAllocatedStorageStage
+      PubliclyAccessible: !Ref AllowRemoteStage
+      VPCSecurityGroups: 
+        - !Ref DBEC2SecurityGroup
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, rds, stage ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: stage
+  RDSMySQLInstanceProd: 
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Retain
+    DependsOn: DBEC2SecurityGroup
+    Condition: CreateRDSInstanceResourcesProd
+    Properties: 
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Engine: MySQL
+      DBName: !Ref DBName
+      MultiAZ: !Ref MultiAZDatabaseProd
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBInstanceClass: !Ref DBInstanceClassProd
+      AllocatedStorage: !Ref DBAllocatedStorageProd
+      PubliclyAccessible: !Ref AllowRemoteProd
+      VPCSecurityGroups: 
+        - !Ref DBEC2SecurityGroup
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, rds, prod ] ]
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: prod
+  WebApplication: 
+    Type: AWS::CodeDeploy::Application
+    Properties: 
+      ApplicationName: !Join [ -, [ !Ref Stack, !Ref Mode ] ]
+  DeploymentGroup: 
+    Type: AWS::CodeDeploy::DeploymentGroup
+    DependsOn: 
+      - WebInstanceRole
+    Properties: 
+      ApplicationName: !Ref WebApplication
+      Ec2TagFilters: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
+          Type: KEY_AND_VALUE
+      ServiceRoleArn: !GetAtt WebInstanceRole.Arn
+  DeploymentGroupASG: 
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Condition: CreateASGResources
+    DependsOn: 
+      - WebInstanceRole
+    Properties: 
+      ApplicationName: !Ref WebApplication
+      AutoScalingGroups: 
+        - !Ref WebServerGroup
+      ServiceRoleArn: !GetAtt WebInstanceRole.Arn
+  WebApplicationStage: 
+    Type: AWS::CodeDeploy::Application
+    Properties: 
+      ApplicationName: !Join [ -, [ !Ref Stack, stage ] ]
+  DeploymentGroupStage: 
+    Type: AWS::CodeDeploy::DeploymentGroup
+    DependsOn: 
+      - WebInstanceRole
+    Properties: 
+      ApplicationName: !Ref WebApplicationStage
+      Ec2TagFilters: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web-stage ] ]
+          Type: KEY_AND_VALUE
+      ServiceRoleArn: !GetAtt WebInstanceRole.Arn
+Outputs: 
+  WebsiteURL: 
+    Description: URL for newly created LAMP stack
+    Value: !Join [ '', [ "http://", !GetAtt ApplicationLoadBalancer.DNSName ] ]
+  AccessKeyForS3UserAccessKey: 
+    Value: !Ref S3UserAccessKey
+  SecretKeyForS3UserAccessKey: 
+    Value: !GetAtt S3UserAccessKey.SecretAccessKey

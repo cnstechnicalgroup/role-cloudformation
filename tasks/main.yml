@@ -1,25 +1,24 @@
-# S3 bucket to store template
-- s3_bucket:
+---
+- name: Create S3 bucket to store CF template
+  s3_bucket:
     name: "{{ stack }}-cf-templates"
     state: present
     region: "{{ region }}"
     profile: "{{ aws_profile }}"
   register: s3_template_bucket
 
-- s3: 
+- name: Upload CF template to S3
+  s3: 
     bucket: "{{ stack }}-cf-templates"
     object: "cloudfront.yml" 
-    src: "../../templates/{{ cf_template }}.yml"
+    src: "{{ cf_template }}.yml"
     mode: put
     region: "{{ region }}"
     profile: "{{ aws_profile }}"
   register: s3_object
   tags: "cloudformation-s3upload"
 
-- include: web-standard.yml
-  when: cf_template == 'web-standard'
-
-- include: web-stage-prod.yml
-  when: cf_template == 'web-stage-prod'
+# Include CF template-specific task
+- include: "{{ cf_template }}.yml"
 
 - debug: var=cf
