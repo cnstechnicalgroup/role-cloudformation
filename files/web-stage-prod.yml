@@ -37,7 +37,7 @@ Parameters:
     MaxLength: 64
     AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
     ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
-  CreateDevInstances: 
+  CreateEC2InstancesStage: 
     Default: false
     Description: Create EC2 instances for building AMI
     Type: String
@@ -750,8 +750,8 @@ Conditions:
     !Or [ !Equals [ !Ref "AWS::Region", "eu-central-1" ], !Equals [ !Ref "AWS::Region", "cn-north-1" ], !Equals [ !Ref "AWS::Region", ap-northeast-2 ] ]
   Is-EC2-Classic:
     !Not [ Condition: Is-EC2-VPC ]
-  CreateDevInstanceResources:
-    !Equals [ !Ref CreateDevInstances, true ]
+  CreateEC2InstanceResourcesStage:
+    !Equals [ !Ref CreateEC2InstancesStage, true ]
   CreateRDSInstanceResourcesStage:
     !Equals [ !Ref CreateRDSInstancesStage, true ]
   CreateRDSInstanceResourcesProd:
@@ -1197,7 +1197,7 @@ Resources:
   EC2WebInstance: 
     Type: AWS::EC2::Instance
     DeletionPolicy: Retain
-    Condition: CreateDevInstanceResources
+    Condition: CreateEC2InstanceResourcesStage
     Properties: 
       IamInstanceProfile: !Ref WebInstanceProfile
       NetworkInterfaces: 

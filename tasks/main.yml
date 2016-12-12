@@ -11,7 +11,7 @@
   s3: 
     bucket: "{{ stack }}-cf-templates"
     object: "cloudfront.yml" 
-    src: "{{ cf_template }}.yml"
+    src: "{{ role_path }}/files/{{ cf_template }}.yml"
     mode: put
     region: "{{ region }}"
     profile: "{{ aws_profile }}"

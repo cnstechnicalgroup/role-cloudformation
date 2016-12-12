@@ -15,10 +15,10 @@
       Domain: "{{ domain }}"
       # EC2 Details
       KeyPair: "{{ key_pair }}"
-      CreateDevInstances: "{{ create_dev_instances }}"
-      CreateRDSInstances: "{{ create_rds_instances }}"
-      CreateASG: "{{ create_asg_resources }}"
-      InstanceType: "{{ instance_type }}"
+      CreateEC2InstancesStage: "{{ create_ec2_instances_stage }}"
+      CreateRDSInstancesProd: "{{ create_rds_instances_prod }}"
+      CreateASGProd: "{{ create_asg_resources_prod }}"
+      InstanceType: "{{ instance_type_stage }}"
       AMIImageID: "{{ ami_image_id }}"
       # Auto Scaling
       ASGInstanceType: "{{ asg_instance_type }}"
@@ -40,14 +40,21 @@
       RDSSubnetAZB: "{{ rds_subnet_az_b }}"
       SSHMgmtIP: "{{ ssh_mgmt_ip }}"
       VPCPeeringConnectionID: "{{ vpc_peering_connection_id }}"
-      # RDS / DB Details
-      MultiAZDatabase: "{{ multi_az_database }}"
+      PeerOwnerID: "{{ peer_owner_id }}"
+      AllowRemoteStage: "{{ allow_remote_stage }}"
+      AllowRemoteProd: "{{ allow_remote_prod }}"
+      # RDS / DB Details (defaults)
       DBName: "{{ db_name }}"
       DBUser: "{{ db_user }}"
       DBPassword: "{{ db_password }}"
-      DBInstanceClass: "{{ db_instance_class }}"
-      DBAllocatedStorage: "{{ db_allocated_storage }}"
-      AllowRemote: "{{ db_allow_remote }}"
+      # RDS / DB Details (stage)
+      MultiAZDatabaseStage: "{{ db_stage_multi_az }}"
+      DBInstanceClassStage: "{{ db_stage_instance_class }}"
+      DBAllocatedStorageStage: "{{ db_stage_allocated_storage }}"
+      # RDS / DB Details (prod)
+      MultiAZDatabaseProd: "{{ db_prod_multi_az }}"
+      DBInstanceClassProd: "{{ db_prod_instance_class }}"
+      DBAllocatedStorageProd: "{{ db_prod_allocated_storage }}"
       # Application Details
       GitRepository: "{{ git_repository }}"
     tags:
