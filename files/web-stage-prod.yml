@@ -58,7 +58,7 @@ Parameters:
     AllowedValues: 
       - true
       - false
-  CreateASG: 
+  CreateASGProd: 
     Default: true
     Description: Create ASG Resources?
     Type: String
@@ -461,7 +461,7 @@ Parameters:
     MaxLength: 20
     Default: ""
     ConstraintDescription: must be a valid VPC Peering Connection ID (pcx-c0c41da9)
-  MgmtAccountID:
+  PeerOwnerID:
     Description: Management account ID
     Type: String
     MinLength: 0
@@ -756,8 +756,8 @@ Conditions:
     !Equals [ !Ref CreateRDSInstancesStage, true ]
   CreateRDSInstanceResourcesProd:
     !Equals [ !Ref CreateRDSInstancesProd, true ]
-  CreateASGResources:
-    !Equals [ !Ref CreateASG, true ]
+  CreateASGResourcesProd:
+    !Equals [ !Ref CreateASGProd, true ]
   CreateVPCPeeringConnectionRoute: 
     !Not [ !Equals [ !Ref VPCPeeringConnectionID, "" ] ]
   UseSSL: 
@@ -772,7 +772,7 @@ Resources:
       InstanceTenancy: default
       Tags: 
         - Key: Name
-          Value: !Join [ -, [ !Ref Stack, vpc , !Ref Mode ] ]
+          Value: !Join [ -, [ !Ref Stack, vpc ] ]
         - Key: Stack
           Value: !Ref Stack
         - Key: Owner
@@ -997,12 +997,31 @@ Resources:
     Properties: 
       AccessControl: Private
       BucketName: !Join [ -, [ !Ref Stack, deploy ] ]
-  S3BucketProduction: 
+  S3BucketStage: 
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties: 
+      AccessControl: Private
+      BucketName: !Join [ -, [ !Ref Stack, stage ] ]
+      WebsiteConfiguration: 
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      CorsConfiguration: 
+        CorsRules: 
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods: 
+              - GET
+            AllowedOrigins:
+              - "*"
+            Id: CORSRule-Public
+            MaxAge: 3600
+  S3BucketProd: 
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
     Properties: 
       AccessControl: PublicRead
-      BucketName: !Join [ -, [ !Ref Stack, !Ref Mode] ]
+      BucketName: !Join [ -, [ !Ref Stack, prod] ]
       WebsiteConfiguration: 
         IndexDocument: index.html
         ErrorDocument: error.html
@@ -1028,29 +1047,52 @@ Resources:
         RoutingRules: 
           - RedirectRule: 
               HostName: !Ref Domain
-  BackupAccessBucketPolicy: 
+  BackupAccessBucketPolicyStage:
     Type: AWS::S3::BucketPolicy
     Properties: 
-      Bucket: !Ref S3BucketProduction
+      Bucket: !Ref S3BucketStage
       PolicyDocument: 
         Version: 2012-10-17
         Statement: 
           - Sid: List Access
             Effect: Allow
             Principal: 
-              AWS: !Join [ '', [ "arn:aws:s3:::", !Ref MgmtAccountID, '-', !Ref Mode ] ]
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
             Action: 
               - s3:ListBucket
               - s3:GetBucketLocation
-            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Stack, '-', !Ref Mode ] ]
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-stage' ] ]
           - Sid: Get Object Read Only
             Effect: Allow
             Principal: 
-              AWS: !Join [ '', [ "arn:aws:s3:::", !Ref MgmtAccountID, '-', !Ref Mode ] ]
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
             Action: 
               - s3:GetObject
               - s3:PutObject
-            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Stack, '-', !Ref Mode, "/*" ] ]
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-stage/*' ] ]
+  BackupAccessBucketPolicyProd: 
+    Type: AWS::S3::BucketPolicy
+    Properties: 
+      Bucket: !Ref S3BucketProd
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Sid: List Access
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-prod' ] ]
+          - Sid: Get Object Read Only
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
+            Action: 
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-prod/*' ] ]
   S3AccessGroup: 
     Type: AWS::IAM::Group
     Properties: 
@@ -1107,7 +1149,7 @@ Resources:
             Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketDeploy, /* ] ]
           - Effect: Allow
             Action: "*"
-            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProduction, /* ] ]
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProd, /* ] ]
           - Effect: Allow
             Action: elasticloadbalancing:DescribeLoadBalancers
             Resource: "*"
@@ -1125,7 +1167,10 @@ Resources:
             Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketDeploy, /* ] ]
           - Effect: Allow
             Action: "*"
-            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProduction, /* ] ]
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketStage, /* ] ]
+          - Effect: Allow
+            Action: "*"
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProd, /* ] ]
       Groups: 
         - !Ref S3AccessGroup
   WebInstanceProfile: 
@@ -1171,7 +1216,7 @@ Resources:
           - Effect: Allow
             Action: 
               - s3:ListBucket
-            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Sstack, -deploy ] ]
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref Stack, -deploy ] ]
           - Effect: Allow
             Action: 
               - s3:GetObject
@@ -1355,7 +1400,7 @@ Resources:
 #            Value: !Ref Mode
   WebServerGroup: 
     Type: AWS::AutoScaling::AutoScalingGroup
-    Condition: CreateASGResources
+    Condition: CreateASGResourcesProd
     Properties: 
       AvailabilityZones: 
         - !Ref EC2WebSubnetAZA
@@ -1400,7 +1445,7 @@ Resources:
         WaitOnResourceSignals: false
   LaunchConfig: 
     Type: AWS::AutoScaling::LaunchConfiguration
-    Condition: CreateASGResources
+    Condition: CreateASGResourcesProd
     DependsOn: InternetGateway
     Properties: 
       AssociatePublicIpAddress: true
@@ -1495,7 +1540,7 @@ Resources:
       ServiceRoleArn: !GetAtt WebInstanceRole.Arn
   DeploymentGroupASG: 
     Type: AWS::CodeDeploy::DeploymentGroup
-    Condition: CreateASGResources
+    Condition: CreateASGResourcesProd
     DependsOn: 
       - WebInstanceRole
     Properties: 
