@@ -1262,9 +1262,9 @@ Resources:
         - Key: Owner
           Value: !Ref Owner
         - Key: Mode
-          Value: !Ref Mode
+          Value: stage
         - Key: Role
-          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
+          Value: !Join [ -, [ !Ref Stack, web-stage ] ]
 #    ElasticLoadBalancer: 
 #      Type: AWS::ElasticLoadBalancing::LoadBalancer
 #      Properties: 
