@@ -441,7 +441,12 @@ Parameters:
       - cc2.8xlarge
       - cg1.4xlarge
     ConstraintDescription: must be a valid EC2 instance type.
-  SSLCertARN: 
+  SSLCertARNStage: 
+    Default: "arn::"
+    Description: SSL Cert ARN
+    Type: String
+    ConstraintDescription: "valid AWS SSL certificate arn:: string"
+  SSLCertARNProd: 
     Default: "arn::"
     Description: SSL Cert ARN
     Type: String
@@ -760,8 +765,10 @@ Conditions:
     !Equals [ !Ref CreateASGProd, true ]
   CreateVPCPeeringConnectionRoute: 
     !Not [ !Equals [ !Ref VPCPeeringConnectionID, "" ] ]
-  UseSSL: 
-    !Not [ !Equals [ !Ref SSLCertARN, "" ] ]
+  UseSSLStage: 
+    !Not [ !Equals [ !Ref SSLCertARNStage, "" ] ]
+  UseSSLProd: 
+    !Not [ !Equals [ !Ref SSLCertARNProd, "" ] ]
 Resources: 
   StackVPC: 
     Type: AWS::EC2::VPC
@@ -1163,14 +1170,44 @@ Resources:
         Version: 2012-10-17
         Statement: 
           - Effect: Allow
+            Action: "s3:ListAllMyBuckets"
+            Resource: arn:aws:s3:::*
+          - Effect: Allow
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketDeploy ] ]
+          - Effect: Allow
             Action: "*"
             Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketDeploy, /* ] ]
+          - Effect: Allow
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketStage ] ]
           - Effect: Allow
             Action: "*"
             Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketStage, /* ] ]
           - Effect: Allow
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProd ] ]
+          - Effect: Allow
             Action: "*"
             Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProd, /* ] ]
+      Groups: 
+        - !Ref S3AccessGroup
+  CloudFrontAccessPolicy: 
+    Type: AWS::IAM::Policy
+    Properties: 
+      PolicyName: CloudFrontAccess
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Effect: Allow
+            Action: "cloudfront:ListDistributions"
+            Resource: "*"
       Groups: 
         - !Ref S3AccessGroup
   WebInstanceProfile: 
@@ -1189,29 +1226,27 @@ Resources:
           - Resource: 
               - "*"
             Action: 
-              - "cloudformation:*"
-              - "codedeploy:*"
-              - "ec2:*"
+              - autoscaling:*
+              - cloudfront:CreateInvalidation
+              - codedeploy:*
+              - ec2:*
+              - elasticloadbalancing:*
               - iam:AddRoleToInstanceProfile
               - iam:CreateInstanceProfile
               - iam:CreateRole
               - iam:DeleteInstanceProfile
               - iam:DeleteRole
               - iam:DeleteRolePolicy
+              - iam:GetInstanceProfile
               - iam:GetRole
+              - iam:GetRolePolicy
+              - iam:ListInstanceProfilesForRole
+              - iam:ListRolePolicies
+              - iam:ListRoles
               - iam:PassRole
               - iam:PutRolePolicy
               - iam:RemoveRoleFromInstanceProfile
-              - autoscaling:CompleteLifecycleAction
-              - autoscaling:DeleteLifecycleHook
-              - autoscaling:DescribeLifecycleHooks
-              - autoscaling:DescribeAutoScalingGroups
-              - autoscaling:PutLifecycleHook
-              - autoscaling:RecordLifecycleActionHeartbeat
-              - Tag:getResources
-              - Tag:getTags
-              - Tag:getTagsForResource
-              - Tag:getTagsForResourceList
+              - s3:*
             Effect: Allow
           - Effect: Allow
             Action: 
@@ -1232,10 +1267,26 @@ Resources:
         Statement: 
           - Resource: "*"
             Action: 
-              - autoscaling:Describe*
-              - cloudformation:Describe*
-              - cloudformation:GetTemplate
-              - s3:Get*
+              - autoscaling:*",
+              - codedeploy:*",
+              - ec2:*",
+              - elasticloadbalancing:*",
+              - iam:AddRoleToInstanceProfile",
+              - iam:CreateInstanceProfile",
+              - iam:CreateRole",
+              - iam:DeleteInstanceProfile",
+              - iam:DeleteRole",
+              - iam:DeleteRolePolicy",
+              - iam:GetInstanceProfile",
+              - iam:GetRole",
+              - iam:GetRolePolicy",
+              - iam:ListInstanceProfilesForRole",
+              - iam:ListRolePolicies",
+              - iam:ListRoles",
+              - iam:PassRole",
+              - iam:PutRolePolicy",
+              - iam:RemoveRoleFromInstanceProfile",
+              - s3:*"
             Effect: Allow
       Roles: 
         - !Ref WebInstanceRole
@@ -1282,8 +1333,8 @@ Resources:
 #              - CookieBasedPolicy
 #          - LoadBalancerPort: 443
 #            InstancePort: 443
-#            Protocol: !If [ UseSSL, HTTPS, HTTP ]
-#            SSLCertificateId: !Ref SSLCertARN
+#            Protocol: !If [ UseSSLStage, HTTPS, HTTP ]
+#            SSLCertificateId: !Ref SSLCertARNStage
 #        HealthCheck: 
 #          Target: HTTP:443/ping
 #          HealthyThreshold: 2
@@ -1302,37 +1353,38 @@ Resources:
 #            Value: !Ref Owner
 #          - Key: Mode
 #            Value: !Ref Mode
-  ALBListenerHTTP:
+  ALBListenerHTTPStage:
     Type : AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
       - Type: forward
-        TargetGroupArn: !Ref ALBTargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
+        TargetGroupArn: !Ref ALBTargetGroupStage
+      LoadBalancerArn: !Ref ApplicationLoadBalancerStage
       Port: 80
       Protocol: HTTP
-  ALBListenerHTTPS:
+  ALBListenerHTTPSStage:
     Type : AWS::ElasticLoadBalancingV2::Listener
-    Condition: UseSSL
+    Condition: UseSSLStage
     Properties:
       DefaultActions:
       - Type: forward
-        TargetGroupArn: !Ref ALBTargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
+        TargetGroupArn: !Ref ALBTargetGroupStage
+      LoadBalancerArn: !Ref ApplicationLoadBalancerStage
       Certificates:
-      - CertificateArn: !Ref SSLCertARN
+      - CertificateArn: !Ref SSLCertARNStage
       Port: 443
       Protocol: HTTPS
-  ALBTargetGroup:
+  ALBTargetGroupStage:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       HealthCheckIntervalSeconds: 10
       HealthCheckProtocol: HTTP
+      HealthCheckPort: 443
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       Matcher:
         HttpCode: '200'
-      Name: !Join [ -, [ !Ref Stack, albtg, !Ref Mode ] ]
+      Name: !Join [ -, [ !Ref Stack, albtg-stage ] ]
       Port: 443
       Protocol: HTTP
       UnhealthyThresholdCount: 5
@@ -1344,8 +1396,8 @@ Resources:
       - Key: Owner
         Value: !Ref Owner
       - Key: Mode
-        Value: !Ref Mode
-  ApplicationLoadBalancer: 
+        Value: stage
+  ApplicationLoadBalancerStage: 
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       Scheme: internet-facing
@@ -1356,13 +1408,79 @@ Resources:
       - !Ref ELBSecurityGroup
       Tags:
       - Key: Name
-        Value: !Join [ -, [ !Ref Stack, alb, !Ref Mode ] ]
+        Value: !Join [ -, [ !Ref Stack, alb-stage ] ]
       - Key: Stack
         Value: !Ref Stack
       - Key: Owner
         Value: !Ref Owner
       - Key: Mode
-        Value: !Ref Mode
+        Value: stage
+  ALBListenerHTTPProd:
+    Type : AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroupProd
+      LoadBalancerArn: !Ref ApplicationLoadBalancerProd
+      Port: 80
+      Protocol: HTTP
+  ALBListenerHTTPSProd:
+    Type : AWS::ElasticLoadBalancingV2::Listener
+    Condition: UseSSLProd
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref ALBTargetGroupProd
+      LoadBalancerArn: !Ref ApplicationLoadBalancerProd
+      Certificates:
+      - CertificateArn: !Ref SSLCertARNProd
+      Port: 443
+      Protocol: HTTPS
+  ALBTargetGroupProd:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 443
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Name: !Join [ -, [ !Ref Stack, albtg-prod ] ]
+      Port: 443
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      HealthCheckPath: /ping
+      VpcId: !Ref StackVPC
+      Tags:
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Owner
+        Value: !Ref Owner
+      - Key: Mode
+        Value: prod
+  ApplicationLoadBalancerProd: 
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+      - !Ref EC2WebSubnetA
+      - !Ref EC2WebSubnetB
+      SecurityGroups:
+      - !Ref ELBSecurityGroup
+      Tags:
+      - Key: Name
+        Value: !Join [ -, [ !Ref Stack, alb-prod ] ]
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Owner
+        Value: !Ref Owner
+      - Key: Mode
+        Value: prod
+
+
+
+
 #      Properties: 
 #        CrossZone: true
 #        LBCookieStickinessPolicy: 
@@ -1378,8 +1496,8 @@ Resources:
 #              - CookieBasedPolicy
 #          - LoadBalancerPort: 443
 #            InstancePort: 443
-#            Protocol: !If [ UseSSL, HTTPS, HTTP ]
-#            SSLCertificateId: !Ref SSLCertARN
+#            Protocol: !If [ UseSSLStage, HTTPS, HTTP ]
+#            SSLCertificateId: !Ref SSLCertARNStage
 #        HealthCheck: 
 #          Target: HTTP:443/ping
 #          HealthyThreshold: 2
@@ -1411,10 +1529,10 @@ Resources:
       MaxSize: !Ref MaxCapacity
       DesiredCapacity: !Ref DesiredCapacity
       LoadBalancerNames: 
-        - !Ref ApplicationLoadBalancer
+        - !Ref ApplicationLoadBalancerStage
         #- !Ref ElasticLoadBalancer
       TargetGroupARNs:
-        - !Ref ALBTargetGroup
+        - !Ref ALBTargetGroupStage
       Tags: 
         - Key: Name
           Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
@@ -1566,7 +1684,7 @@ Resources:
 Outputs: 
   WebsiteURL: 
     Description: URL for newly created LAMP stack
-    Value: !Join [ '', [ "http://", !GetAtt ApplicationLoadBalancer.DNSName ] ]
+    Value: !Join [ '', [ "http://", !GetAtt ApplicationLoadBalancerStage.DNSName ] ]
   AccessKeyForS3UserAccessKey: 
     Value: !Ref S3UserAccessKey
   SecretKeyForS3UserAccessKey: 

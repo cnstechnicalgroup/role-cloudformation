@@ -16,6 +16,7 @@
       # EC2 Details
       KeyPair: "{{ key_pair }}"
       CreateEC2InstancesStage: "{{ create_ec2_instances_stage }}"
+      CreateRDSInstancesStage: "{{ create_rds_instances_stage }}"
       CreateRDSInstancesProd: "{{ create_rds_instances_prod }}"
       CreateASGProd: "{{ create_asg_resources_prod }}"
       InstanceType: "{{ instance_type_stage }}"
@@ -27,7 +28,8 @@
       MinCapacity: "{{ min_capacity }}"
       MaxCapacity: "{{ max_capacity }}"
       # ELB Details
-      SSLCertARN: "{{ ssl_cert_arn }}"
+      SSLCertARNStage: "{{ ssl_cert_arn_stage }}"
+      SSLCertARNProd: "{{ ssl_cert_arn_prod }}"
       # Network Details
       VPCIDCIDRRange: "{{ vpc_id_cidr_range }}"
       EC2WebSubnetCIDRRangeA: "{{ ec2_web_subnet_cidr_range_a }}"
