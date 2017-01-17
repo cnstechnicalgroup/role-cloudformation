@@ -58,9 +58,44 @@ Parameters:
     AllowedValues: 
       - true
       - false
+  CreateASGStage: 
+    Default: true
+    Description: Create ASG Resources (stage)?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
   CreateASGProd: 
     Default: true
-    Description: Create ASG Resources?
+    Description: Create ASG Resources (prod)?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  CreateEFSStage: 
+    Default: true
+    Description: Create EFS Resources (stage)?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  CreateEFSProd: 
+    Default: true
+    Description: Create EFS Resources (prod)?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  CreateELBStage: 
+    Default: true
+    Description: Create ELB (stage)?
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  CreateELBProd: 
+    Default: true
+    Description: Create ELB (prod)?
     Type: String
     AllowedValues: 
       - true
@@ -473,6 +508,13 @@ Parameters:
     MaxLength: 20
     Default: ""
     ConstraintDescription: must be a valid AWS account ID
+  DevOwnerID:
+    Description: Dev account ID
+    Type: String
+    MinLength: 0
+    MaxLength: 20
+    Default: ""
+    ConstraintDescription: must be a valid AWS account ID
 Mappings: 
   AWSInstanceType2Arch: 
     t1.micro: 
@@ -761,14 +803,32 @@ Conditions:
     !Equals [ !Ref CreateRDSInstancesStage, true ]
   CreateRDSInstanceResourcesProd:
     !Equals [ !Ref CreateRDSInstancesProd, true ]
-  CreateASGResourcesProd:
-    !Equals [ !Ref CreateASGProd, true ]
+  CreateASGResourcesStage: !And
+    - !Equals [ !Ref CreateASGStage, true ]
+    - !Equals [ !Ref CreateELBStage, true ]
+  CreateASGResourcesProd: !And
+    - !Equals [ !Ref CreateASGProd, true ]
+    - !Equals [ !Ref CreateELBProd, true ]
+  CreateDevS3Access:
+    !Not [ !Equals [ !Ref DevOwnerID, "" ] ]
+  SkipDevS3Access:
+    !Equals [ !Ref DevOwnerID, "" ]
+  CreateEFSResourcesStage:
+    !Equals [ !Ref CreateEFSStage, true ]
+  CreateEFSResourcesProd:
+    !Equals [ !Ref CreateEFSProd, true ]
+  CreateELBResourcesStage:
+    !Equals [ !Ref CreateELBStage, true ]
+  CreateELBResourcesProd:
+    !Equals [ !Ref CreateELBProd, true ]
   CreateVPCPeeringConnectionRoute: 
     !Not [ !Equals [ !Ref VPCPeeringConnectionID, "" ] ]
-  UseSSLStage: 
-    !Not [ !Equals [ !Ref SSLCertARNStage, "" ] ]
-  UseSSLProd: 
-    !Not [ !Equals [ !Ref SSLCertARNProd, "" ] ]
+  UseSSLStage: !And
+    - !Not [ !Equals [ !Ref SSLCertARNStage, "" ] ]
+    - !Equals [ !Ref CreateELBStage, true ]
+  UseSSLProd: !And
+    - !Not [ !Equals [ !Ref SSLCertARNProd, "" ] ]
+    - !Equals [ !Ref CreateELBProd, true ]
 Resources: 
   StackVPC: 
     Type: AWS::EC2::VPC
@@ -891,6 +951,58 @@ Resources:
       RouteTableId: !Ref RouteTable
       DestinationCidrBlock: !Ref SSHMgmtIP
       VpcPeeringConnectionId: !Ref VPCPeeringConnectionID
+  MountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref StackVPC
+      GroupDescription: Security group for EFS mount target
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '2049'
+        ToPort: '2049'
+        CidrIp: 0.0.0.0/0
+  FileSystemStage:
+    Type: AWS::EFS::FileSystem
+    Condition: CreateEFSResourcesStage
+    Properties:
+      PerformanceMode: generalPurpose
+      FileSystemTags:
+      - Key: Name
+        Value:
+          !Join [ -, [ !Ref Stack, efs-stage ] ]
+      - Key: Mode
+        Value: stage
+  MountTargetStage:
+    Type: AWS::EFS::MountTarget
+    Condition: CreateEFSResourcesStage
+    Properties:
+      FileSystemId:
+        Ref: FileSystemStage
+      SubnetId:
+        Ref: EC2WebSubnetA
+      SecurityGroups:
+      - Ref: MountTargetSecurityGroup
+  FileSystemProd:
+    Type: AWS::EFS::FileSystem
+    Condition: CreateEFSResourcesProd
+    Properties:
+      PerformanceMode: generalPurpose
+      FileSystemTags:
+      - Key: Name
+        Value:
+          !Join [ -, [ !Ref Stack, efs-prod ] ]
+      - Key: Mode
+        Value: prod
+  MountTargetProd:
+    Type: AWS::EFS::MountTarget
+    Condition: CreateEFSResourcesProd
+    Properties:
+      FileSystemId:
+        Ref: FileSystemProd
+      SubnetId:
+        Ref: EC2WebSubnetA
+      SecurityGroups:
+      - Ref: MountTargetSecurityGroup
   EC2WebSecurityGroup: 
     Type: AWS::EC2::SecurityGroup
     Properties: 
@@ -1056,6 +1168,7 @@ Resources:
               HostName: !Ref Domain
   BackupAccessBucketPolicyStage:
     Type: AWS::S3::BucketPolicy
+    Condition: SkipDevS3Access
     Properties: 
       Bucket: !Ref S3BucketStage
       PolicyDocument: 
@@ -1079,6 +1192,7 @@ Resources:
             Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-stage/*' ] ]
   BackupAccessBucketPolicyProd: 
     Type: AWS::S3::BucketPolicy
+    Condition: SkipDevS3Access
     Properties: 
       Bucket: !Ref S3BucketProd
       PolicyDocument: 
@@ -1099,6 +1213,84 @@ Resources:
             Action: 
               - s3:GetObject
               - s3:PutObject
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-prod/*' ] ]
+  BackupDevAccessBucketPolicyStage:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateDevS3Access
+    Properties: 
+      Bucket: !Ref S3BucketStage
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Sid: List Access
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-stage' ] ]
+          - Sid: Get Object Read Only
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
+            Action: 
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-stage/*' ] ]
+          - Sid: List Access Dev
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref DevOwnerID, ':root' ] ]
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-stage' ] ]
+          - Sid: Get Object Read Only Dev
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref DevOwnerID, ':root' ] ]
+            Action: 
+              - s3:GetObject
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-stage/*' ] ]
+  BackupDevAccessBucketPolicyProd: 
+    Type: AWS::S3::BucketPolicy
+    Condition: CreateDevS3Access
+    Properties: 
+      Bucket: !Ref S3BucketProd
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement: 
+          - Sid: List Access
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-prod' ] ]
+          - Sid: Get Object Read Only
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref PeerOwnerID, ':root' ] ]
+            Action: 
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-prod/*' ] ]
+          - Sid: List Access Dev
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref DevOwnerID, ':root' ] ]
+            Action: 
+              - s3:ListBucket
+              - s3:GetBucketLocation
+            Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-prod' ] ]
+          - Sid: Get Object Read Only Dev
+            Effect: Allow
+            Principal: 
+              AWS: !Join [ '', [ 'arn:aws:iam::', !Ref DevOwnerID, ':root' ] ]
+            Action: 
+              - s3:GetObject
             Resource: !Join [ '', [ 'arn:aws:s3:::', !Ref Stack, '-prod/*' ] ]
   S3AccessGroup: 
     Type: AWS::IAM::Group
@@ -1316,45 +1508,9 @@ Resources:
           Value: stage
         - Key: Role
           Value: !Join [ -, [ !Ref Stack, web-stage ] ]
-#    ElasticLoadBalancer: 
-#      Type: AWS::ElasticLoadBalancing::LoadBalancer
-#      Properties: 
-#        CrossZone: true
-#        LBCookieStickinessPolicy: 
-#          - PolicyName: CookieBasedPolicy
-#            CookieExpirationPeriod: 30
-#        SecurityGroups: 
-#          - !Ref ELBSecurityGroup
-#        Listeners: 
-#          - LoadBalancerPort: 80
-#            InstancePort: 80
-#            Protocol: HTTP
-#            PolicyNames: 
-#              - CookieBasedPolicy
-#          - LoadBalancerPort: 443
-#            InstancePort: 443
-#            Protocol: !If [ UseSSLStage, HTTPS, HTTP ]
-#            SSLCertificateId: !Ref SSLCertARNStage
-#        HealthCheck: 
-#          Target: HTTP:443/ping
-#          HealthyThreshold: 2
-#          UnhealthyThreshold: 5
-#          Interval: 10
-#          Timeout: 5
-#        Subnets: 
-#          - !Ref EC2WebSubnetA
-#          - !Ref EC2WebSubnetB
-#        Tags: 
-#          - Key: Name
-#            Value: !Join [ -, [ !Ref Stack, elb, !Ref Mode ] ]
-#          - Key: Stack
-#            Value: !Ref Stack
-#          - Key: Owner
-#            Value: !Ref Owner
-#          - Key: Mode
-#            Value: !Ref Mode
   ALBListenerHTTPStage:
     Type : AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateELBResourcesStage
     Properties:
       DefaultActions:
       - Type: forward
@@ -1376,6 +1532,7 @@ Resources:
       Protocol: HTTPS
   ALBTargetGroupStage:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateELBResourcesStage
     Properties:
       HealthCheckIntervalSeconds: 10
       HealthCheckProtocol: HTTP
@@ -1399,6 +1556,7 @@ Resources:
         Value: stage
   ApplicationLoadBalancerStage: 
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: CreateELBResourcesStage
     Properties:
       Scheme: internet-facing
       Subnets:
@@ -1417,6 +1575,7 @@ Resources:
         Value: stage
   ALBListenerHTTPProd:
     Type : AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateELBResourcesProd
     Properties:
       DefaultActions:
       - Type: forward
@@ -1438,6 +1597,7 @@ Resources:
       Protocol: HTTPS
   ALBTargetGroupProd:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateELBResourcesProd
     Properties:
       HealthCheckIntervalSeconds: 10
       HealthCheckProtocol: HTTP
@@ -1461,6 +1621,8 @@ Resources:
         Value: prod
   ApplicationLoadBalancerProd: 
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: CreateELBResourcesProd
+    DependsOn: ALBTargetGroupProd
     Properties:
       Scheme: internet-facing
       Subnets:
@@ -1477,65 +1639,25 @@ Resources:
         Value: !Ref Owner
       - Key: Mode
         Value: prod
-
-
-
-
-#      Properties: 
-#        CrossZone: true
-#        LBCookieStickinessPolicy: 
-#          - PolicyName: CookieBasedPolicy
-#            CookieExpirationPeriod: 30
-#        SecurityGroups: 
-#          - !Ref ELBSecurityGroup
-#        Listeners: 
-#          - LoadBalancerPort: 80
-#            InstancePort: 80
-#            Protocol: HTTP
-#            PolicyNames: 
-#              - CookieBasedPolicy
-#          - LoadBalancerPort: 443
-#            InstancePort: 443
-#            Protocol: !If [ UseSSLStage, HTTPS, HTTP ]
-#            SSLCertificateId: !Ref SSLCertARNStage
-#        HealthCheck: 
-#          Target: HTTP:443/ping
-#          HealthyThreshold: 2
-#          UnhealthyThreshold: 5
-#          Interval: 10
-#          Timeout: 5
-#        Subnets: 
-#          - !Ref EC2WebSubnetA
-#          - !Ref EC2WebSubnetB
-#        Tags: 
-#          - Key: Name
-#            Value: !Join [ -, [ !Ref Stack, elb, !Ref Mode ] ]
-#          - Key: Stack
-#            Value: !Ref Stack
-#          - Key: Owner
-#            Value: !Ref Owner
-#          - Key: Mode
-#            Value: !Ref Mode
-  WebServerGroup: 
+  WebServerGroupStage:
     Type: AWS::AutoScaling::AutoScalingGroup
-    Condition: CreateASGResourcesProd
+    Condition: CreateASGResourcesStage
     Properties: 
       AvailabilityZones: 
         - !Ref EC2WebSubnetAZA
       VPCZoneIdentifier: 
         - !Ref EC2WebSubnetA
-      LaunchConfigurationName: !Ref LaunchConfig
+      LaunchConfigurationName: !Ref LaunchConfigStage
       MinSize: !Ref MinCapacity
       MaxSize: !Ref MaxCapacity
       DesiredCapacity: !Ref DesiredCapacity
       LoadBalancerNames: 
         - !Ref ApplicationLoadBalancerStage
-        #- !Ref ElasticLoadBalancer
       TargetGroupARNs:
         - !Ref ALBTargetGroupStage
       Tags: 
         - Key: Name
-          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
+          Value: !Join [ -, [ !Ref Stack, web, stage ] ]
           PropagateAtLaunch: true
         - Key: Stack
           Value: !Ref Stack
@@ -1544,10 +1666,10 @@ Resources:
           Value: !Ref Owner
           PropagateAtLaunch: true
         - Key: Mode
-          Value: !Ref Mode
+          Value: stage
           PropagateAtLaunch: true
         - Key: Role
-          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
+          Value: !Join [ -, [ !Ref Stack, web, stage ] ]
           PropagateAtLaunch: true
     CreationPolicy: 
       AutoScalingCreationPolicy: 
@@ -1561,7 +1683,64 @@ Resources:
         MaxBatchSize: 1
         PauseTime: PT10M
         WaitOnResourceSignals: false
-  LaunchConfig: 
+  LaunchConfigStage: 
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Condition: CreateASGResourcesStage
+    DependsOn: InternetGateway
+    Properties: 
+      AssociatePublicIpAddress: true
+      ImageId: !Ref ASGAMIID
+      IamInstanceProfile: !Ref WebInstanceProfile
+      InstanceType: !Ref ASGInstanceType
+      SecurityGroups: 
+        - !Ref EC2WebSecurityGroup
+      KeyName: !Ref KeyPair
+  WebServerGroupProd:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Condition: CreateASGResourcesProd
+    DependsOn: ApplicationLoadBalancerProd
+    Properties: 
+      AvailabilityZones: 
+        - !Ref EC2WebSubnetAZA
+      VPCZoneIdentifier: 
+        - !Ref EC2WebSubnetA
+      LaunchConfigurationName: !Ref LaunchConfigProd
+      MinSize: !Ref MinCapacity
+      MaxSize: !Ref MaxCapacity
+      DesiredCapacity: !Ref DesiredCapacity
+      #LoadBalancerNames: 
+      #  - !Ref ApplicationLoadBalancerProd
+      TargetGroupARNs:
+        - !Ref ALBTargetGroupProd
+      Tags: 
+        - Key: Name
+          Value: !Join [ -, [ !Ref Stack, web, prod ] ]
+          PropagateAtLaunch: true
+        - Key: Stack
+          Value: !Ref Stack
+          PropagateAtLaunch: true
+        - Key: Owner
+          Value: !Ref Owner
+          PropagateAtLaunch: true
+        - Key: Mode
+          Value: prod
+          PropagateAtLaunch: true
+        - Key: Role
+          Value: !Join [ -, [ !Ref Stack, web, prod ] ]
+          PropagateAtLaunch: true
+    CreationPolicy: 
+      AutoScalingCreationPolicy: 
+        MinSuccessfulInstancesPercent: 0
+      ResourceSignal: 
+        Timeout: PT10M
+        Count: !Ref DesiredCapacity
+    UpdatePolicy: 
+      AutoScalingRollingUpdate: 
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT10M
+        WaitOnResourceSignals: false
+  LaunchConfigProd: 
     Type: AWS::AutoScaling::LaunchConfiguration
     Condition: CreateASGResourcesProd
     DependsOn: InternetGateway
@@ -1641,30 +1820,26 @@ Resources:
           Value: !Ref Owner
         - Key: Mode
           Value: prod
-  WebApplication: 
+  WebApplicationProd: 
     Type: AWS::CodeDeploy::Application
     Properties: 
-      ApplicationName: !Join [ -, [ !Ref Stack, !Ref Mode ] ]
-  DeploymentGroup: 
+      ApplicationName: !Join [ -, [ !Ref Stack, prod ] ]
+  DeploymentGroupProd:
     Type: AWS::CodeDeploy::DeploymentGroup
-    DependsOn: 
+    DependsOn:
       - WebInstanceRole
-    Properties: 
-      ApplicationName: !Ref WebApplication
-      Ec2TagFilters: 
-        - Key: Name
-          Value: !Join [ -, [ !Ref Stack, web, !Ref Mode ] ]
-          Type: KEY_AND_VALUE
+    Properties:
+      ApplicationName: !Ref WebApplicationProd
       ServiceRoleArn: !GetAtt WebInstanceRole.Arn
-  DeploymentGroupASG: 
+  DeploymentGroupASGProd:
     Type: AWS::CodeDeploy::DeploymentGroup
     Condition: CreateASGResourcesProd
-    DependsOn: 
+    DependsOn:
       - WebInstanceRole
-    Properties: 
-      ApplicationName: !Ref WebApplication
-      AutoScalingGroups: 
-        - !Ref WebServerGroup
+    Properties:
+      ApplicationName: !Ref WebApplicationProd
+      AutoScalingGroups:
+        - !Ref WebServerGroupProd
       ServiceRoleArn: !GetAtt WebInstanceRole.Arn
   WebApplicationStage: 
     Type: AWS::CodeDeploy::Application
@@ -1682,9 +1857,6 @@ Resources:
           Type: KEY_AND_VALUE
       ServiceRoleArn: !GetAtt WebInstanceRole.Arn
 Outputs: 
-  WebsiteURL: 
-    Description: URL for newly created LAMP stack
-    Value: !Join [ '', [ "http://", !GetAtt ApplicationLoadBalancerStage.DNSName ] ]
   AccessKeyForS3UserAccessKey: 
     Value: !Ref S3UserAccessKey
   SecretKeyForS3UserAccessKey: 

@@ -18,9 +18,13 @@
       CreateEC2InstancesStage: "{{ create_ec2_instances_stage }}"
       CreateRDSInstancesStage: "{{ create_rds_instances_stage }}"
       CreateRDSInstancesProd: "{{ create_rds_instances_prod }}"
+      CreateASGStage: "{{ create_asg_resources_stage }}"
       CreateASGProd: "{{ create_asg_resources_prod }}"
       InstanceType: "{{ instance_type_stage }}"
       AMIImageID: "{{ ami_image_id }}"
+      # EFS Resources
+      CreateEFSStage: "{{ create_efs_stage }}"
+      CreateEFSProd: "{{ create_efs_prod }}"
       # Auto Scaling
       ASGInstanceType: "{{ asg_instance_type }}"
       ASGAMIID: "{{ asg_ami_id }}"
@@ -28,6 +32,8 @@
       MinCapacity: "{{ min_capacity }}"
       MaxCapacity: "{{ max_capacity }}"
       # ELB Details
+      CreateELBStage: "{{ create_elb_stage }}"
+      CreateELBProd: "{{ create_elb_prod }}"
       SSLCertARNStage: "{{ ssl_cert_arn_stage }}"
       SSLCertARNProd: "{{ ssl_cert_arn_prod }}"
       # Network Details
@@ -45,6 +51,7 @@
       PeerOwnerID: "{{ peer_owner_id }}"
       AllowRemoteStage: "{{ allow_remote_stage }}"
       AllowRemoteProd: "{{ allow_remote_prod }}"
+      DevOwnerID: "{{ dev_owner_id }}"
       # RDS / DB Details (defaults)
       DBName: "{{ db_name }}"
       DBUser: "{{ db_user }}"
