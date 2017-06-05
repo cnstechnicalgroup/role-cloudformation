@@ -100,13 +100,6 @@ Parameters:
     AllowedValues: 
       - true
       - false
-  GitRepository: 
-    Default: projectname
-    Description: Stack name
-    Type: String
-    MinLength: 1
-    MaxLength: 128
-    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
   VPCIDCIDRRange: 
     Description: The IP address range for your new VPC.
     Type: String
@@ -1349,6 +1342,9 @@ Resources:
           - Effect: Allow
             Action: "*"
             Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketProd, /* ] ]
+          - Effect: Allow
+            Action: "*"
+            Resource: !Join [ '', [ "arn:aws:s3:::", !Ref S3BucketStage, /* ] ]
           - Effect: Allow
             Action: elasticloadbalancing:DescribeLoadBalancers
             Resource: "*"

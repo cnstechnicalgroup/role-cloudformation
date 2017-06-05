@@ -65,7 +65,6 @@
       DBInstanceClassProd: "{{ db_prod_instance_class }}"
       DBAllocatedStorageProd: "{{ db_prod_allocated_storage }}"
       # Application Details
-      GitRepository: "{{ git_repository }}"
     tags:
       Stack: "{{ stack }}"
       Owner: "{{ owner }}"
