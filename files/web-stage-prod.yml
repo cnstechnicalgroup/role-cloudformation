@@ -1550,6 +1550,30 @@ Resources:
         Value: !Ref Owner
       - Key: Mode
         Value: stage
+  ALBTargetGroupStageHTTP:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateELBResourcesStage
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 443
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Name: !Join [ -, [ !Ref Stack, albtg-stage, 'http' ] ]
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      HealthCheckPath: /ping
+      VpcId: !Ref StackVPC
+      Tags:
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Owner
+        Value: !Ref Owner
+      - Key: Mode
+        Value: stage
   ApplicationLoadBalancerStage: 
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Condition: CreateELBResourcesStage
@@ -1604,6 +1628,30 @@ Resources:
         HttpCode: '200'
       Name: !Join [ -, [ !Ref Stack, albtg-prod ] ]
       Port: 443
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      HealthCheckPath: /ping
+      VpcId: !Ref StackVPC
+      Tags:
+      - Key: Stack
+        Value: !Ref Stack
+      - Key: Owner
+        Value: !Ref Owner
+      - Key: Mode
+        Value: prod
+  ALBTargetGroupProdHTTP:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateELBResourcesProd
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 443
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: '200'
+      Name: !Join [ -, [ !Ref Stack, albtg-prod, 'http' ] ]
+      Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 5
       HealthCheckPath: /ping
@@ -1708,6 +1756,7 @@ Resources:
       #  - !Ref ApplicationLoadBalancerProd
       TargetGroupARNs:
         - !Ref ALBTargetGroupProd
+        - !Ref ALBTargetGroupProdHTTP
       Tags: 
         - Key: Name
           Value: !Join [ -, [ !Ref Stack, web, prod ] ]
