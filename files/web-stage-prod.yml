@@ -1510,7 +1510,7 @@ Resources:
     Properties:
       DefaultActions:
       - Type: forward
-        TargetGroupArn: !Ref ALBTargetGroupStage
+        TargetGroupArn: !Ref ALBTargetGroupStageHTTP
       LoadBalancerArn: !Ref ApplicationLoadBalancerStage
       Port: 80
       Protocol: HTTP
@@ -1577,6 +1577,7 @@ Resources:
   ApplicationLoadBalancerStage: 
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Condition: CreateELBResourcesStage
+    DependsOn: ALBTargetGroupStageHTTP
     Properties:
       Scheme: internet-facing
       Subnets:
@@ -1599,7 +1600,7 @@ Resources:
     Properties:
       DefaultActions:
       - Type: forward
-        TargetGroupArn: !Ref ALBTargetGroupProd
+        TargetGroupArn: !Ref ALBTargetGroupProdHTTP
       LoadBalancerArn: !Ref ApplicationLoadBalancerProd
       Port: 80
       Protocol: HTTP
