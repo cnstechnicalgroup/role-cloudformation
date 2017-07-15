@@ -1,0 +1,298 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: "Simple single EC2 instance behind CloudFront distribution with ACM certificate"
+Parameters: 
+  #KeyPair: 
+  #  Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+  #  Type: AWS::EC2::KeyPair::KeyName
+  #  ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  Stack: 
+    Default: projectname
+    Description: Stack name
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  Domain: 
+    Default: domainname
+    Description: Domain name
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  Owner: 
+    Default: acme
+    Description: Project owner name
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  Mode: 
+    Default: prod
+    Description: Mode name (dev, stage, test, prod)
+    Type: String
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  CFRootObject: 
+    Default: "index.php"
+    Description: CloudFront root object (index.php, index.html, etc)
+    Type: String
+    MinLength: 1
+    MaxLength: 10
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  AllowRemoteProd:
+    Default: false
+    Description: Allow accesss from management IP
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  AllowRemoteStage:
+    Default: false
+    Description: Allow accesss from management IP
+    Type: String
+    AllowedValues: 
+      - true
+      - false
+  OperatorEMail:
+    Description: EMail address to notify if there are any operational issues
+    Type: String
+    AllowedPattern: >-
+      ([a-zA-Z0-9_\-\.]+)@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.)|(([a-zA-Z0-9\-]+\.)+))([a-zA-Z]{2,4}|[0-9]{1,3})(\]?)
+    ConstraintDescription: must be a valid email address.
+  DevOwnerID:
+    Description: Dev account ID
+    Type: String
+    MinLength: 0
+    MaxLength: 20
+    Default: ""
+    ConstraintDescription: must be a valid AWS account ID
+  InstanceTypeProd: 
+    Description: WebServer EC2 instance type
+    Type: String
+    Default: t2.nano
+    AllowedValues: 
+      - t1.micro
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - m1.small
+      - m1.medium
+      - m1.large
+      - m1.xlarge
+      - m2.xlarge
+      - m2.2xlarge
+      - m2.4xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c1.medium
+      - c1.xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - g2.2xlarge
+      - g2.8xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+      - d2.xlarge
+      - d2.2xlarge
+      - d2.4xlarge
+      - d2.8xlarge
+      - hi1.4xlarge
+      - hs1.8xlarge
+      - cr1.8xlarge
+      - cc2.8xlarge
+      - cg1.4xlarge
+    ConstraintDescription: must be a valid EC2 instance type.
+  SSLCertARNProd: 
+    Default: ""
+    Description: SSL Cert ARN
+    Type: String
+    ConstraintDescription: "valid AWS SSL certificate arn:: string"
+  SSHMgmtIP: 
+    Description:  The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.0.6.0/24
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  PeerOwnerID:
+    Description: Management account ID
+    Type: String
+    MinLength: 0
+    MaxLength: 20
+    Default: ""
+    ConstraintDescription: must be a valid AWS account ID
+Conditions:
+  UseSSLProd: !Not [ !Equals [ !Ref SSLCertARNProd, "" ] ]
+Resources:
+  EBAppProd:
+    Type: "AWS::ElasticBeanstalk::Application"
+    Properties: 
+      ApplicationName: !Join [ -, [ !Ref Stack, ebapp, !Ref Mode ] ]
+      Description: "PHP application"
+  EBAppVersionProd:
+    Type: "AWS::ElasticBeanstalk::ApplicationVersion"
+    Properties: 
+      ApplicationName: 
+        Ref: EBAppProd
+      Description: "initial version"
+      SourceBundle: 
+        S3Bucket: !Join [ -, [ !Ref Stack, "eb-deploy" ] ] 
+        S3Key: "initial-version.zip"
+  EBConfigurationTemplateProd:
+    Type: 'AWS::ElasticBeanstalk::ConfigurationTemplate'
+    Properties:
+      ApplicationName: !Ref EBAppProd
+      Description: Default Configuration Version 1.0
+      SolutionStackName: "64bit Amazon Linux 2017.03 v2.4.1 running PHP 7.0"
+      OptionSettings:
+        - Namespace: 'aws:autoscaling:launchconfiguration'
+          OptionName: InstanceType
+          Value: !Ref InstanceTypeProd
+        - Namespace: 'aws:elasticbeanstalk:environment'
+          OptionName: EnvironmentType
+          Value: SingleInstance
+  EBEnvironmentProd:
+    Type: "AWS::ElasticBeanstalk::Environment"
+    Properties: 
+      ApplicationName: !Ref EBAppProd
+      TemplateName: !Ref EBConfigurationTemplateProd
+      Description: "EB running PHP / nginx"
+      EnvironmentName: !Join [ -, [ !Ref Stack, ebenv, !Ref Mode ] ]
+      SolutionStackName: "64bit Amazon Linux 2017.03 v2.4.1 running PHP 7.0"
+      CNAMEPrefix: !Join [ -, [ !Ref Stack, !Ref Mode ] ]
+      VersionLabel: !Ref EBAppVersionProd
+      OptionSettings:
+        - Namespace: 'aws:autoscaling:launchconfiguration'
+          OptionName: 'SSHSourceRestriction'
+          Value: !Join [ "", [ 'tcp,22,22,', !Ref SSHMgmtIP ] ]
+      Tags: 
+        - Key: Stack
+          Value: !Ref Stack
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Mode
+          Value: !Ref Mode
+  AlarmTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      Subscription:
+        - Endpoint: !Ref OperatorEMail
+          Protocol: email
+#  CPUAlarmHigh:
+#    Type: 'AWS::CloudWatch::Alarm'
+#    Properties:
+#      EvaluationPeriods: '10'
+#      Statistic: Average
+#      Threshold: '50'
+#      AlarmDescription: >-
+#        Alarm if CPU too high or metric disappears indicating the RDS database
+#        instance is having issues
+#      Period: '60'
+#      Namespace: AWS/RDS
+#      MetricName: CPUUtilization
+#      Dimensions:
+#        - Name: DBInstanceIdentifier
+#          Value: !Ref SampleDB
+#      ComparisonOperator: GreaterThanThreshold
+#      AlarmActions:
+#        - !Ref AlarmTopic
+#      InsufficientDataActions:
+#        - !Ref AlarmTopic
+  CloudFrontDistributionProd:
+    Type: 'AWS::CloudFront::Distribution'
+    DependsOn: EBEnvironmentProd
+    Properties:
+      DistributionConfig:
+        Origins:
+        - DomainName: !Join [ ., [ !Join [ -, [ !Ref Stack, !Ref Mode ] ], !Ref 'AWS::Region', 'elasticbeanstalk.com'  ] ]
+          Id: !Join [ -, [ !Ref Stack, dist, !Ref Mode ] ]
+          CustomOriginConfig:
+            HTTPPort: '80'
+            HTTPSPort: '443'
+            OriginProtocolPolicy: http-only
+        Enabled: true
+        Comment: ""
+        DefaultRootObject: !Ref CFRootObject
+        Aliases:
+        - !Ref Domain
+        DefaultCacheBehavior:
+          TargetOriginId: !Join [ -, [ !Ref Stack, dist, !Ref Mode ] ]
+          SmoothStreaming: false
+          AllowedMethods:
+            - DELETE
+            - GET
+            - HEAD
+            - OPTIONS
+            - PATCH
+            - POST
+            - PUT
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: all
+            Headers:
+              - Host
+              - Origin
+              - Referer
+              - CloudFront-Is-Mobile-Viewer
+          ViewerProtocolPolicy: 'redirect-to-https'
+          DefaultTTL: 0
+          MinTTL: 0
+          MaxTTL: 0
+        CustomErrorResponses:
+        - ErrorCode: '404'
+          ResponsePagePath: "/404.html"
+          ResponseCode: '200'
+          ErrorCachingMinTTL: '30'
+        PriceClass: PriceClass_200
+        ViewerCertificate:
+          AcmCertificateArn: !If [ UseSSLProd, !Ref SSLCertARNProd, !Ref "AWS::NoValue" ]
+          SslSupportMethod: 'sni-only'
+          MinimumProtocolVersion: TLSv1
+Outputs:
+  EBURL:
+    Description: URL of the AWS Elastic Beanstalk Environment
+    Value: !Join 
+      - ''
+      - - 'http://'
+        - !GetAtt 
+          - EBEnvironmentProd
+          - EndpointURL
+  CFURL:
+    Description: URL of the CloudFront Distrobution
+    Value: !Join 
+      - ''
+      - - 'https://'
+        - !GetAtt 
+          - CloudFrontDistributionProd
+          - DomainName

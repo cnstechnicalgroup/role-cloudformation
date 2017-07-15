@@ -1,0 +1,86 @@
+---
+- name: Create S3 bucket to store initial EB app version
+  s3_bucket:
+    name: "{{ stack }}-eb-deploy"
+    state: present
+    region: "{{ region }}"
+    profile: "{{ aws_profile }}"
+  register: s3_ebdeploy_bucket
+
+- name: Upload EB initial app
+  s3: 
+    bucket: "{{ stack }}-eb-deploy"
+    object: initial-version.zip
+    src: "{{ role_path }}/files/initial-version-{{ eb_platform }}.zip"
+    mode: put
+    region: "{{ region }}"
+    profile: "{{ aws_profile }}"
+  register: s3_eb_app
+
+- name: Launch CloudFormation Stack
+  cloudformation:
+    profile: "{{ aws_profile }}"
+    stack_name: "{{ stack }}-{{ mode }}"
+    state: "present"
+    region: "{{ region }}"
+    disable_rollback: false
+    template_url: "{{ s3_object.url }}"
+    template_parameters:
+      # General
+      Owner: "{{ owner }}"
+      Mode: "{{ mode }}"
+      Stack: "{{ stack }}"
+      Domain: "{{ domain }}"
+      OperatorEMail: "{{ operation_email }}"
+      # EC2 Details
+      InstanceTypeProd: "{{ instance_type_prod }}"
+      # CloudFront
+      CFRootObject: "{{ cf_root_object }}"
+      # EFS Resources
+      #CreateEFSStage: "{{ create_efs_stage }}"
+      #CreateEFSProd: "{{ create_efs_prod }}"
+      # Auto Scaling
+      #ASGInstanceType: "{{ asg_instance_type }}"
+      #ASGAMIID: "{{ asg_ami_id }}"
+      #DesiredCapacity: "{{ desired_capacity }}"
+      #MinCapacity: "{{ min_capacity }}"
+      #MaxCapacity: "{{ max_capacity }}"
+      # ELB Details
+      #CreateELBStage: "{{ create_elb_stage }}"
+      #CreateELBProd: "{{ create_elb_prod }}"
+      #SSLCertARNStage: "{{ ssl_cert_arn_stage }}"
+      SSLCertARNProd: "{{ ssl_cert_arn_prod }}"
+      # Network Details
+      #VPCIDCIDRRange: "{{ vpc_id_cidr_range }}"
+      #EC2WebSubnetCIDRRangeA: "{{ ec2_web_subnet_cidr_range_a }}"
+      #EC2WebSubnetCIDRRangeB: "{{ ec2_web_subnet_cidr_range_b }}"
+      #EC2WebSubnetAZA: "{{ ec2_web_subnet_az_a }}"
+      #EC2WebSubnetAZB: "{{ ec2_web_subnet_az_b }}"
+      #RDSSubnetCIDRRangeA: "{{ rds_subnet_cidr_range_a }}"
+      #RDSSubnetCIDRRangeB: "{{ rds_subnet_cidr_range_b }}"
+      #RDSSubnetAZA: "{{ rds_subnet_az_a }}"
+      #RDSSubnetAZB: "{{ rds_subnet_az_b }}"
+      SSHMgmtIP: "{{ ssh_mgmt_ip }}"
+      #VPCPeeringConnectionID: "{{ vpc_peering_connection_id }}"
+      PeerOwnerID: "{{ peer_owner_id }}"
+      AllowRemoteStage: "{{ allow_remote_stage }}"
+      AllowRemoteProd: "{{ allow_remote_prod }}"
+      DevOwnerID: "{{ dev_owner_id }}"
+      # RDS / DB Details (defaults)
+      #DBName: "{{ db_name }}"
+      #DBUser: "{{ db_user }}"
+      #DBPassword: "{{ db_password }}"
+      # RDS / DB Details (stage)
+      #MultiAZDatabaseStage: "{{ db_stage_multi_az }}"
+      #DBInstanceClassStage: "{{ db_stage_instance_class }}"
+      #DBAllocatedStorageStage: "{{ db_stage_allocated_storage }}"
+      # RDS / DB Details (prod)
+      #MultiAZDatabaseProd: "{{ db_prod_multi_az }}"
+      #DBInstanceClassProd: "{{ db_prod_instance_class }}"
+      #DBAllocatedStorageProd: "{{ db_prod_allocated_storage }}"
+      # Application Details
+    tags:
+      Stack: "{{ stack }}"
+      Owner: "{{ owner }}"
+      Mode: "{{ mode }}"
+  register: cf
