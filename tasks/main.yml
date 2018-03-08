@@ -2,19 +2,18 @@
 - name: Create S3 bucket to store CF template
   s3_bucket:
     name: "{{ stack }}-cf-templates"
-    state: present
-    region: "{{ region }}"
     profile: "{{ aws_profile }}"
+    region: "{{ region }}"
   register: s3_template_bucket
 
 - name: Upload CF template to S3
-  s3: 
+  aws_s3: 
     bucket: "{{ stack }}-cf-templates"
     object: "cloudfront.yml" 
     src: "{{ role_path }}/files/{{ cf_template }}.yml"
     mode: put
-    region: "{{ region }}"
     profile: "{{ aws_profile }}"
+    region: "{{ region }}"
   register: s3_object
   tags: "cloudformation-s3upload"
 

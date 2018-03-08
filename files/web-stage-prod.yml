@@ -1646,7 +1646,7 @@ Resources:
     Properties:
       HealthCheckIntervalSeconds: 10
       HealthCheckProtocol: HTTP
-      HealthCheckPort: 443
+      HealthCheckPort: 80 
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       Matcher:
