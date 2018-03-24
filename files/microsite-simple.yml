@@ -230,7 +230,7 @@ Resources:
 #        - !Ref AlarmTopic
   CloudFrontDistributionProd:
     Type: 'AWS::CloudFront::Distribution'
-    DependsOn: EBEnvironmentProd
+    #DependsOn: EBEnvironmentProd
     Properties:
       DistributionConfig:
         Origins:
@@ -276,8 +276,9 @@ Resources:
           ErrorCachingMinTTL: '30'
         PriceClass: PriceClass_200
         ViewerCertificate:
+          CloudFrontDefaultCertificate: !If [ UseSSLProd, "false", "true" ]
           AcmCertificateArn: !If [ UseSSLProd, !Ref SSLCertARNProd, !Ref "AWS::NoValue" ]
-          SslSupportMethod: 'sni-only'
+          SslSupportMethod: !If [ UseSSLProd, 'sni-only', !Ref "AWS::NoValue" ]
           MinimumProtocolVersion: TLSv1
 Outputs:
   EBURL:
