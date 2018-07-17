@@ -1,0 +1,56 @@
+---
+- name: Launch CloudFormation Stack
+  cloudformation:
+    profile: "{{ aws_profile }}"
+    stack_name: "{{ stack }}-{{ mode }}"
+    state: "present"
+    region: "{{ region }}"
+    disable_rollback: false
+    template_url: "{{ s3_object.url }}"
+    template_parameters:
+      # General
+      Owner: "{{ owner }}"
+      Mode: "{{ mode }}"
+      Stack: "{{ stack }}"
+      Domain: "{{ domain }}"
+      # EC2 Details
+      KeyPair: "{{ key_pair }}"
+      CreateRDSInstancesStage: "{{ create_rds_instances_stage }}"
+      CreateRDSInstancesProd: "{{ create_rds_instances_prod }}"
+      # EFS Resources
+      CreateEFSStage: "{{ create_efs_stage }}"
+      CreateEFSProd: "{{ create_efs_prod }}"
+      # Network Details
+      VPCIDCIDRRange: "{{ vpc_id_cidr_range }}"
+      EC2WebSubnetCIDRRangeA: "{{ ec2_web_subnet_cidr_range_a }}"
+      EC2WebSubnetCIDRRangeB: "{{ ec2_web_subnet_cidr_range_b }}"
+      EC2WebSubnetAZA: "{{ ec2_web_subnet_az_a }}"
+      EC2WebSubnetAZB: "{{ ec2_web_subnet_az_b }}"
+      RDSSubnetCIDRRangeA: "{{ rds_subnet_cidr_range_a }}"
+      RDSSubnetCIDRRangeB: "{{ rds_subnet_cidr_range_b }}"
+      RDSSubnetAZA: "{{ rds_subnet_az_a }}"
+      RDSSubnetAZB: "{{ rds_subnet_az_b }}"
+      SSHMgmtIP: "{{ ssh_mgmt_ip }}"
+      VPCPeeringConnectionID: "{{ vpc_peering_connection_id }}"
+      PeerOwnerID: "{{ peer_owner_id }}"
+      AllowRemoteStage: "{{ allow_remote_stage }}"
+      AllowRemoteProd: "{{ allow_remote_prod }}"
+      DevOwnerID: "{{ dev_owner_id }}"
+      # RDS / DB Details (defaults)
+      DBName: "{{ db_name }}"
+      DBUser: "{{ db_user }}"
+      DBPassword: "{{ db_password }}"
+      # RDS / DB Details (stage)
+      MultiAZDatabaseStage: "{{ db_stage_multi_az }}"
+      DBInstanceClassStage: "{{ db_stage_instance_class }}"
+      DBAllocatedStorageStage: "{{ db_stage_allocated_storage }}"
+      # RDS / DB Details (prod)
+      MultiAZDatabaseProd: "{{ db_prod_multi_az }}"
+      DBInstanceClassProd: "{{ db_prod_instance_class }}"
+      DBAllocatedStorageProd: "{{ db_prod_allocated_storage }}"
+      # Application Details
+    tags:
+      Stack: "{{ stack }}"
+      Owner: "{{ owner }}"
+      Mode: "{{ mode }}"
+  register: cf
